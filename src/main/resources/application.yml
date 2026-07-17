@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: finguard-core
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
