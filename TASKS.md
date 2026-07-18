@@ -6,7 +6,7 @@
 - [x] 确认 JDK 17 可用
 - [x] 确认 Maven 可用
 - [x] 确认 Git 可用
-- [ ] 确认 Docker 与 Docker Compose 可用（当前未安装，且 WSL 未启用）
+- [x] 确认 Docker 与 Docker Compose 可用（Docker Desktop 4.82.0、Engine 29.6.1、Compose v5.3.0，使用 WSL2 后端）
 - [x] 初始化 Git 仓库
 - [x] 创建最小 Spring Boot 项目
 - [x] 验证应用能够启动
