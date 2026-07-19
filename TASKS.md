@@ -28,10 +28,12 @@
 
 ### Day 2：需求与数据模型
 
-- 明确账户、交易的最小业务规则和验收标准
-- 绘制第一版 ER 图
-- 设计账户表、交易表及必要唯一约束
-- 先评审设计，不提前生成全部业务表
+- [x] 明确账户、交易的最小业务规则和验收标准
+- [x] 绘制第一版 ER 图
+- [x] 设计账户表、交易表及必要唯一约束
+- [x] 完成设计评审，未提前生成业务表
+- [x] 提交 Day 2 设计文档
+- 设计文档：[`docs/design/day2-requirements-and-data-model.md`](docs/design/day2-requirements-and-data-model.md)
 
 ### Day 3：MySQL 与迁移基线
 
