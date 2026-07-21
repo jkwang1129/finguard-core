@@ -4,6 +4,8 @@ target/
 *.iml
 .vscode/
 
+.env
+
 *.log
 .DS_Store
 Thumbs.db

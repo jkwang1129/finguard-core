@@ -37,10 +37,10 @@
 
 ### Day 3：MySQL 与迁移基线
 
-- 用 Docker Compose 启动 MySQL
-- 配置数据源和 MyBatis-Plus
-- 引入 Flyway 并创建首个最小迁移
-- 验证应用能连接数据库
+- [x] 用 Docker Compose 启动 MySQL
+- [x] 配置数据源和 MyBatis-Plus
+- [x] 引入 Flyway 并创建首个最小迁移
+- [x] 验证应用能连接数据库
 
 ### Day 4：账户 CRUD
 
