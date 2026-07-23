@@ -5,6 +5,7 @@ import com.finguard.core.account.exception.AccountNotFoundException;
 import com.finguard.core.account.mapper.AccountMapper;
 import com.finguard.core.account.model.AccountStatus;
 import com.finguard.core.transaction.dto.CreateTransactionRequest;
+import com.finguard.core.transaction.dto.TransactionQueryRequest;
 import com.finguard.core.transaction.dto.UpdateTransactionRequest;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
@@ -131,6 +132,26 @@ class TransactionServiceImplTest {
         assertThat(insertedTransaction.getDeleted()).isFalse();
         assertThat(response.id()).isEqualTo(TRANSACTION_ID);
         assertThat(response.source()).isEqualTo(TransactionSource.MANUAL);
+    }
+
+    @Test
+    void queryShouldRejectReversedTimeRangeBeforeCallingMapper() {
+        TransactionQueryRequest request = new TransactionQueryRequest(
+                1L,
+                20L,
+                ACCOUNT_ID,
+                null,
+                null,
+                null,
+                NOW,
+                NOW.minusDays(1)
+        );
+
+        assertThatThrownBy(() -> transactionService.query(request))
+                .isInstanceOf(InvalidTransactionInputException.class)
+                .hasMessage("Start time must not be later than end time");
+
+        verifyNoInteractions(transactionMapper, accountMapper);
     }
 
     @Test

@@ -1,7 +1,13 @@
 package com.finguard.core.transaction.controller;
 
+import com.finguard.core.common.vo.PageResponse;
+import com.finguard.core.common.exception.GlobalExceptionHandler;
 import com.finguard.core.transaction.dto.CreateTransactionRequest;
+import com.finguard.core.transaction.dto.TransactionQueryRequest;
 import com.finguard.core.transaction.dto.UpdateTransactionRequest;
+import com.finguard.core.transaction.exception.DuplicateTransactionException;
+import com.finguard.core.transaction.exception.InvalidTransactionInputException;
+import com.finguard.core.transaction.exception.TransactionNotFoundException;
 import com.finguard.core.transaction.model.TransactionDirection;
 import com.finguard.core.transaction.model.TransactionSource;
 import com.finguard.core.transaction.service.TransactionService;
@@ -10,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,7 +24,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -45,8 +54,124 @@ class TransactionControllerTest {
                 .standaloneSetup(
                         new TransactionController(transactionService)
                 )
+                .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
+    }
+
+    @Test
+    void queryShouldBindFiltersAndReturnPageResponse() throws Exception {
+        when(transactionService.query(
+                any(TransactionQueryRequest.class)
+        )).thenReturn(new PageResponse<>(
+                1,
+                10,
+                1,
+                1,
+                List.of(transactionResponse())
+        ));
+
+        mockMvc.perform(get("/api/transactions")
+                        .param("page", "1")
+                        .param("size", "10")
+                        .param("accountId", "1")
+                        .param("direction", "EXPENSE")
+                        .param("source", "MANUAL")
+                        .param("externalTransactionNo", "TX-001")
+                        .param("startTime", "2026-07-01T00:00:00")
+                        .param("endTime", "2026-07-31T23:59:59"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.records[0].id").value(10))
+                .andExpect(jsonPath("$.records[0].source")
+                        .value("MANUAL"));
+
+        ArgumentCaptor<TransactionQueryRequest> captor =
+                ArgumentCaptor.forClass(TransactionQueryRequest.class);
+        verify(transactionService).query(captor.capture());
+        TransactionQueryRequest request = captor.getValue();
+        assertThat(request.page()).isEqualTo(1L);
+        assertThat(request.size()).isEqualTo(10L);
+        assertThat(request.accountId()).isEqualTo(1L);
+        assertThat(request.direction())
+                .isEqualTo(TransactionDirection.EXPENSE);
+        assertThat(request.source())
+                .isEqualTo(TransactionSource.MANUAL);
+        assertThat(request.startTime())
+                .isEqualTo(LocalDateTime.of(2026, 7, 1, 0, 0));
+        assertThat(request.endTime())
+                .isEqualTo(LocalDateTime.of(
+                        2026,
+                        7,
+                        31,
+                        23,
+                        59,
+                        59
+                ));
+    }
+
+    @Test
+    void queryShouldRejectNonPositiveAccountId() throws Exception {
+        mockMvc.perform(get("/api/transactions")
+                        .param("accountId", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors[0].field")
+                        .value("accountId"));
+
+        verifyNoInteractions(transactionService);
+    }
+
+    @Test
+    void queryShouldReturnBadRequestForReversedTimeRange()
+            throws Exception {
+        when(transactionService.query(
+                any(TransactionQueryRequest.class)
+        )).thenThrow(new InvalidTransactionInputException(
+                "Start time must not be later than end time"
+        ));
+
+        mockMvc.perform(get("/api/transactions")
+                        .param("startTime", "2026-07-24T00:00:00")
+                        .param("endTime", "2026-07-23T00:00:00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value("INVALID_TRANSACTION_INPUT"))
+                .andExpect(jsonPath("$.message")
+                        .value("Start time must not be later than end time"));
+    }
+
+    @Test
+    void getByIdShouldReturnUnifiedNotFoundError() throws Exception {
+        when(transactionService.getById(99L))
+                .thenThrow(new TransactionNotFoundException(99L));
+
+        mockMvc.perform(get("/api/transactions/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code")
+                        .value("TRANSACTION_NOT_FOUND"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/transactions/99"));
+    }
+
+    @Test
+    void createShouldReturnConflictForDuplicateTransaction()
+            throws Exception {
+        when(transactionService.create(
+                any(CreateTransactionRequest.class)
+        )).thenThrow(new DuplicateTransactionException(
+                1L,
+                TransactionSource.MANUAL,
+                "TX-001"
+        ));
+
+        mockMvc.perform(post("/api/transactions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validCreateJson("128.50")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value("DUPLICATE_TRANSACTION"));
     }
 
     @Test
@@ -86,6 +211,28 @@ class TransactionControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(transactionService);
+    }
+
+    @Test
+    void createShouldReturnInvalidRequestForUnknownDirection()
+            throws Exception {
+        mockMvc.perform(post("/api/transactions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "accountId": 1,
+                                  "externalTransactionNo": "TX-001",
+                                  "direction": "UNKNOWN",
+                                  "amount": 128.50,
+                                  "transactionTime": "2026-07-23T09:00:00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.fieldErrors").isEmpty());
 
         verifyNoInteractions(transactionService);
     }

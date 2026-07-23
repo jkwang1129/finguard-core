@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 1 Day 5：已完成工程基线、账户与交易数据模型、MySQL/Flyway/MyBatis-Plus 基线，以及账户和人工交易的最小 CRUD。
+当前进度为 Week 1 Day 6：已完成工程基线、账户与交易数据模型、MySQL/Flyway/MyBatis-Plus 基线、账户与人工交易 CRUD、分页条件查询和统一错误处理。
 
 ## 当前技术基线
 
@@ -28,7 +28,10 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 基于 `(account_id, source, external_transaction_no)` 的组合唯一性；
 - Service 预查重与数据库唯一约束双层保护；
 - 账户和交易软删除后的历史编号保留；
-- 66 个自动化测试，以及真实 MySQL HTTP CRUD 验收。
+- 账户按状态、类型和关键词分页查询；
+- 交易按账户、方向、来源、流水号和时间范围分页查询；
+- 统一错误响应以及 `400`、`404`、`409`、`500` 状态映射；
+- 86 个自动化测试，以及真实 MySQL HTTP CRUD、分页和错误响应验收。
 
 ## 本地运行
 
@@ -92,6 +95,7 @@ GET http://localhost:8080/actuator/health
 
 ```text
 POST   /api/accounts
+GET    /api/accounts?page=1&size=20&status=ACTIVE&accountType=BANK&keyword=main
 GET    /api/accounts/{accountId}
 PATCH  /api/accounts/{accountId}/name
 PATCH  /api/accounts/{accountId}/status
@@ -102,6 +106,7 @@ DELETE /api/accounts/{accountId}
 
 ```text
 POST   /api/transactions
+GET    /api/transactions?page=1&size=20&accountId=1&direction=EXPENSE&source=MANUAL
 GET    /api/transactions/{transactionId}
 PUT    /api/transactions/{transactionId}
 DELETE /api/transactions/{transactionId}
@@ -109,10 +114,23 @@ DELETE /api/transactions/{transactionId}
 
 当前交易创建接口只创建 `MANUAL` 交易。`CSV_IMPORT` 将由后续 CSV 导入流程内部创建，客户端不能自行指定交易来源。
 
+分页接口默认 `page=1`、`size=20`，每页最多返回 100 条记录。交易查询还支持 `externalTransactionNo`、`startTime` 和 `endTime` 条件。
+
+错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
+
+```json
+{
+  "timestamp": "2026-07-23T12:00:00Z",
+  "status": 404,
+  "code": "ACCOUNT_NOT_FOUND",
+  "message": "Account not found: 99",
+  "path": "/api/accounts/99",
+  "fieldErrors": []
+}
+```
+
 ## 当前限制
 
-- 尚未实现分页和条件查询；
-- 尚未实现统一错误响应以及 404/409 状态映射；
 - 尚未实现 Security、JWT 和 RBAC；
 - 尚未实现 CSV 导入、自动对账、审核和审计；
 - 尚未引入 Redis 和 RabbitMQ。

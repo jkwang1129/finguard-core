@@ -1,10 +1,13 @@
 package com.finguard.core.transaction.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.finguard.core.account.entity.Account;
 import com.finguard.core.account.exception.AccountNotFoundException;
 import com.finguard.core.account.mapper.AccountMapper;
 import com.finguard.core.account.model.AccountStatus;
 import com.finguard.core.transaction.dto.CreateTransactionRequest;
+import com.finguard.core.transaction.dto.TransactionQueryRequest;
 import com.finguard.core.transaction.dto.UpdateTransactionRequest;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
@@ -16,6 +19,7 @@ import com.finguard.core.transaction.model.TransactionDirection;
 import com.finguard.core.transaction.model.TransactionSource;
 import com.finguard.core.transaction.service.TransactionService;
 import com.finguard.core.transaction.vo.TransactionResponse;
+import com.finguard.core.common.vo.PageResponse;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +28,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -34,6 +39,7 @@ public class TransactionServiceImpl implements TransactionService {
     private static final int MAX_AMOUNT_INTEGER_DIGITS = 17;
     private static final int MAX_AMOUNT_DECIMAL_PLACES = 2;
     private static final int MAX_FUTURE_MINUTES = 5;
+    private static final long MAX_PAGE_SIZE = 100L;
     private static final TransactionSource MANUAL_SOURCE = TransactionSource.MANUAL;
 
     private final TransactionMapper transactionMapper;
@@ -120,6 +126,72 @@ public class TransactionServiceImpl implements TransactionService {
     @Transactional(readOnly = true)
     public TransactionResponse getById(Long transactionId) {
         return toResponse(requireTransaction(transactionId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<TransactionResponse> query(
+            TransactionQueryRequest request) {
+        validateQueryRequest(request);
+        String externalTransactionNo =
+                normalizeOptionalExternalTransactionNo(
+                        request.externalTransactionNo()
+                );
+
+        Page<Transaction> page = new Page<>(
+                request.page(),
+                request.size()
+        );
+        LambdaQueryWrapper<Transaction> wrapper =
+                new LambdaQueryWrapper<>();
+
+        wrapper.eq(
+                request.accountId() != null,
+                Transaction::getAccountId,
+                request.accountId()
+        );
+        wrapper.eq(
+                request.direction() != null,
+                Transaction::getDirection,
+                request.direction()
+        );
+        wrapper.eq(
+                request.source() != null,
+                Transaction::getSource,
+                request.source()
+        );
+        wrapper.eq(
+                externalTransactionNo != null,
+                Transaction::getExternalTransactionNo,
+                externalTransactionNo
+        );
+        wrapper.ge(
+                request.startTime() != null,
+                Transaction::getTransactionTime,
+                request.startTime()
+        );
+        wrapper.le(
+                request.endTime() != null,
+                Transaction::getTransactionTime,
+                request.endTime()
+        );
+        wrapper.orderByDesc(Transaction::getTransactionTime)
+                .orderByDesc(Transaction::getId);
+
+        Page<Transaction> result =
+                transactionMapper.selectPage(page, wrapper);
+        List<TransactionResponse> records = result.getRecords()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return new PageResponse<>(
+                result.getCurrent(),
+                result.getSize(),
+                result.getTotal(),
+                result.getPages(),
+                records
+        );
     }
 
     @Override
@@ -236,6 +308,60 @@ public class TransactionServiceImpl implements TransactionService {
                 > MAX_EXTERNAL_TRANSACTION_NO_LENGTH) {
             throw new InvalidTransactionInputException(
                     "External transaction number must be between 1 and "
+                            + MAX_EXTERNAL_TRANSACTION_NO_LENGTH
+                            + " characters"
+            );
+        }
+        return externalTransactionNo;
+    }
+
+    private void validateQueryRequest(TransactionQueryRequest request) {
+        if (request == null) {
+            throw new InvalidTransactionInputException(
+                    "Transaction query request must not be null"
+            );
+        }
+        if (request.page() == null || request.page() < 1) {
+            throw new InvalidTransactionInputException(
+                    "Page must be at least 1"
+            );
+        }
+        if (request.size() == null
+                || request.size() < 1
+                || request.size() > MAX_PAGE_SIZE) {
+            throw new InvalidTransactionInputException(
+                    "Size must be between 1 and " + MAX_PAGE_SIZE
+            );
+        }
+        if (request.accountId() != null && request.accountId() <= 0) {
+            throw new InvalidTransactionInputException(
+                    "Account id must be positive"
+            );
+        }
+        if (request.startTime() != null
+                && request.endTime() != null
+                && request.startTime().isAfter(request.endTime())) {
+            throw new InvalidTransactionInputException(
+                    "Start time must not be later than end time"
+            );
+        }
+    }
+
+    private String normalizeOptionalExternalTransactionNo(
+            String rawExternalTransactionNo) {
+        if (rawExternalTransactionNo == null) {
+            return null;
+        }
+
+        String externalTransactionNo =
+                rawExternalTransactionNo.trim();
+        if (externalTransactionNo.isEmpty()) {
+            return null;
+        }
+        if (externalTransactionNo.length()
+                > MAX_EXTERNAL_TRANSACTION_NO_LENGTH) {
+            throw new InvalidTransactionInputException(
+                    "External transaction number must not exceed "
                             + MAX_EXTERNAL_TRANSACTION_NO_LENGTH
                             + " characters"
             );

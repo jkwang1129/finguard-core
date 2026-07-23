@@ -1,5 +1,8 @@
 package com.finguard.core.account.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.finguard.core.account.dto.AccountQueryRequest;
 import com.finguard.core.account.dto.CreateAccountRequest;
 import com.finguard.core.account.dto.UpdateAccountNameRequest;
 import com.finguard.core.account.dto.UpdateAccountStatusRequest;
@@ -12,11 +15,13 @@ import com.finguard.core.account.mapper.AccountMapper;
 import com.finguard.core.account.model.AccountStatus;
 import com.finguard.core.account.service.AccountService;
 import com.finguard.core.account.vo.AccountResponse;
+import com.finguard.core.common.vo.PageResponse;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.List;
 import java.util.regex.Pattern;
 
 @Service
@@ -25,6 +30,8 @@ public class AccountServiceImpl implements AccountService {
     static final Pattern ACCOUNT_NO_PATTERN =
             Pattern.compile("^[A-Z0-9][A-Z0-9_-]{2,63}$");
     static final String DEFAULT_CURRENCY = "CNY";
+    private static final long MAX_PAGE_SIZE = 100L;
+    private static final int MAX_QUERY_KEYWORD_LENGTH = 100;
 
     private final AccountMapper accountMapper;
 
@@ -73,6 +80,49 @@ public class AccountServiceImpl implements AccountService {
     @Transactional(readOnly = true)
     public AccountResponse getById(Long accountId) {
         return toResponse(requireAccount(accountId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<AccountResponse> query(AccountQueryRequest request) {
+        validateQueryRequest(request);
+        String keyword = normalizeOptionalQueryKeyword(request.keyword());
+
+        Page<Account> page = new Page<>(request.page(), request.size());
+        LambdaQueryWrapper<Account> wrapper = new LambdaQueryWrapper<>();
+
+        wrapper.eq(
+                request.status() != null,
+                Account::getStatus,
+                request.status()
+        );
+        wrapper.eq(
+                request.accountType() != null,
+                Account::getAccountType,
+                request.accountType()
+        );
+        wrapper.and(
+                keyword != null,
+                nested -> nested
+                        .like(Account::getAccountNo, keyword)
+                        .or()
+                        .like(Account::getAccountName, keyword)
+        );
+        wrapper.orderByDesc(Account::getId);
+
+        Page<Account> result = accountMapper.selectPage(page, wrapper);
+        List<AccountResponse> records = result.getRecords()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return new PageResponse<>(
+                result.getCurrent(),
+                result.getSize(),
+                result.getTotal(),
+                result.getPages(),
+                records
+        );
     }
 
     @Override
@@ -169,6 +219,45 @@ public class AccountServiceImpl implements AccountService {
             );
         }
         return accountName;
+    }
+
+    private void validateQueryRequest(AccountQueryRequest request) {
+        if (request == null) {
+            throw new InvalidAccountInputException(
+                    "Account query request must not be null"
+            );
+        }
+        if (request.page() == null || request.page() < 1) {
+            throw new InvalidAccountInputException(
+                    "Page must be at least 1"
+            );
+        }
+        if (request.size() == null
+                || request.size() < 1
+                || request.size() > MAX_PAGE_SIZE) {
+            throw new InvalidAccountInputException(
+                    "Size must be between 1 and " + MAX_PAGE_SIZE
+            );
+        }
+    }
+
+    private String normalizeOptionalQueryKeyword(String rawKeyword) {
+        if (rawKeyword == null) {
+            return null;
+        }
+
+        String keyword = rawKeyword.trim();
+        if (keyword.isEmpty()) {
+            return null;
+        }
+        if (keyword.length() > MAX_QUERY_KEYWORD_LENGTH) {
+            throw new InvalidAccountInputException(
+                    "Keyword must not exceed "
+                            + MAX_QUERY_KEYWORD_LENGTH
+                            + " characters"
+            );
+        }
+        return keyword;
     }
 
     private Account requireAccount(Long accountId) {
