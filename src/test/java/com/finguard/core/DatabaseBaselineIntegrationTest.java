@@ -40,12 +40,12 @@ class DatabaseBaselineIntegrationTest {
     }
 
     @Test
-    void flywayShouldHaveAppliedVersionOne() {
+    void flywayShouldHaveAppliedLatestVersion() {
         MigrationInfo current = flyway.info().current();
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("1");
+        assertThat(current.getVersion().getVersion()).isEqualTo("2");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -70,10 +70,13 @@ class DatabaseBaselineIntegrationTest {
 
             statement.setString(1, "accounts");
             statement.setString(2, "transactions");
+            statement.setString(3, "users");
+            statement.setString(4, "roles");
+            statement.setString(5, "user_roles");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(2);
+                assertThat(resultSet.getInt(1)).isEqualTo(5);
             }
         }
     }

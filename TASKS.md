@@ -163,13 +163,15 @@ Day 1 建议提交信息：`docs: design authentication and authorization`
 
 ### Day 2：认证表、Flyway V2 与持久层
 
-- [ ] 新增 Flyway `V2`，创建 `users`、`roles`、`user_roles` 表并初始化 `ADMIN`、`REVIEWER` 角色
-- [ ] 为用户名唯一性、用户角色关联和外键关系建立必要约束与索引
-- [ ] 建立认证模块的 Entity、枚举、Mapper 和最小查询对象
-- [ ] 实现按规范化用户名加载用户及其角色的查询
-- [ ] 准备认证集成测试夹具，测试用户不写入正式 Flyway 迁移
-- [ ] 增加迁移、唯一约束、外键和角色查询的真实 MySQL 集成测试
-- [ ] 运行完整测试并确认 Flyway 从空库可一次迁移到最新版本
+- [x] 新增 Flyway `V2`，创建 `users`、`roles`、`user_roles` 表并初始化 `ADMIN`、`REVIEWER` 角色
+- [x] 为用户名唯一性、用户角色关联和外键关系建立必要约束与索引
+- [x] 建立认证模块的 Entity、枚举、Mapper 和最小查询对象
+- [x] 实现按规范化用户名加载用户及其角色的查询
+- [x] 准备认证集成测试夹具，测试用户不写入正式 Flyway 迁移
+- [x] 增加迁移、唯一约束、外键和角色查询的真实 MySQL 集成测试
+- [x] 运行完整测试并确认 Flyway 从空库可一次迁移到最新版本
+
+Day 2 建议提交信息：`feat: add authentication persistence layer`
 
 ### Day 3：密码校验、登录接口与 JWT 签发
 
@@ -222,10 +224,10 @@ Day 1 建议提交信息：`docs: design authentication and authorization`
 
 ## 今天的最小任务
 
-- [x] 完成 Week 2 Day 1：认证需求、权限矩阵与技术方案
-- [x] 先完成任务 1 的知识讲解和认证请求流
-- [x] 再锁定登录接口、JWT Claims、两小时有效期及 `401`/`403` 响应
-- [x] 完成现有账户、交易接口的匿名、`ADMIN`、`REVIEWER` 权限矩阵
-- [x] 设计 `users`、`roles`、`user_roles`，但暂不创建 Flyway V2
-- [x] 输出 `docs/design/week2-day1-authentication-design.md`
-- [x] 最后运行现有测试和 `git diff --check`，守住 Week 1 基线
+- [x] 完成 Week 2 Day 2：认证表、Flyway V2 与持久层
+- [x] 讲清迁移、约束、索引、Mapper 和测试夹具的职责边界
+- [x] 创建 `users`、`roles`、`user_roles` 并初始化固定角色
+- [x] 建立认证 Entity、枚举、Mapper 和最小认证查询对象
+- [x] 使用测试夹具验证唯一约束、外键、删除限制和角色装配
+- [x] 运行 `mvn clean test`，94 个测试全部通过且无跳过项
+- [x] 使用独立空库验证 Flyway 可一次执行 V1 到 V2，且测试数据清理为零
