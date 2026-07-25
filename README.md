@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 1 Day 6：已完成工程基线、账户与交易数据模型、MySQL/Flyway/MyBatis-Plus 基线、账户与人工交易 CRUD、分页条件查询和统一错误处理。
+当前进度为 Week 1 已完成：工程基线、账户与交易数据模型、MySQL/Flyway/MyBatis-Plus 基线、账户与人工交易 CRUD、分页条件查询、统一错误处理以及 Week 1 综合验收均已完成。
 
 ## 当前技术基线
 
