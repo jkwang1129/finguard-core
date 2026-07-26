@@ -388,15 +388,28 @@ Day 5 验收记录：
 
 Day 5 建议提交信息：`feat: enforce RBAC for business endpoints`
 
-### Day 6：事务边界、索引与 EXPLAIN（待开始）
+### Day 6：事务边界、索引与 EXPLAIN（已完成）
 
-- [ ] 梳理认证和现有账户、交易 Service 的事务边界，区分只读事务与写事务
-- [ ] 不为演示事务硬加业务接口；通过测试专用的用户与角色多表写入微实验验证 `@Transactional` 异常时整体回滚
-- [ ] 学习 Spring 事务代理、自调用失效、受检异常回滚和事务范围过大的常见问题
-- [ ] 使用 `EXPLAIN` 检查用户名查询、用户角色查询和交易分页查询的执行计划
-- [ ] 说明联合索引最左前缀、回表、覆盖索引，以及 `%keyword%` 无法正常利用 B-Tree 前缀的原因
-- [ ] 只根据真实查询和执行计划新增必要索引，不为“看起来可能有用”的字段堆索引
-- [ ] 记录事务回滚与索引分析结果，并运行完整测试
+- [x] 梳理认证和现有账户、交易 Service 的事务边界，区分只读事务与写事务
+- [x] 不为演示事务硬加业务接口；通过测试专用的用户与角色多表写入微实验验证 `@Transactional` 异常时整体回滚
+- [x] 学习 Spring 事务代理、自调用失效、受检异常回滚和事务范围过大的常见问题
+- [x] 使用 `EXPLAIN` 检查用户名查询、用户角色查询和交易分页查询的执行计划
+- [x] 说明联合索引最左前缀、回表、覆盖索引，以及 `%keyword%` 无法正常利用 B-Tree 前缀的原因
+- [x] 只根据真实查询和执行计划新增必要索引，不为“看起来可能有用”的字段堆索引
+- [x] 记录事务回滚与索引分析结果，并运行完整测试
+
+Day 6 验收记录：
+
+- `DatabaseUserDetailsService` 使用短只读事务完成用户与角色读取；账户、交易和认证初始化的原有读写事务边界经审计后保持
+- `TransactionBoundaryIntegrationTest` 通过测试专用 Spring 代理 Bean 验证用户与角色绑定在运行时异常时整体回滚，聚焦认证与事务测试 9 项全部通过
+- 使用 10 个临时账户、2,000 条交易和认证测试数据执行真实 `EXPLAIN`；用户名唯一索引、用户角色复合主键和按账户交易索引均继续保留
+- 默认交易分页修改前为全表扫描并出现 `Using filesort`；新增 `V3__add_transaction_pagination_index.sql` 后使用 `(deleted, transaction_time DESC, id DESC)`，不再文件排序
+- `mvn clean test` 共 157 项测试全部通过，无失败、错误或跳过项
+- 独立临时空库成功执行 Flyway `V1` 到 `V3`，数据库、认证、索引和事务回滚 11 项测试全部通过，临时库已删除
+- 真实应用健康状态为 `UP`，匿名交易请求返回 `401`；账户、交易、用户和用户角色残留均为零，固定角色为 2，8080 端口已释放
+- 分析文档：[`docs/analysis/week2-day6-transaction-and-index-analysis.md`](docs/analysis/week2-day6-transaction-and-index-analysis.md)
+
+Day 6 建议提交信息：`perf: verify transactions and optimize query indexes`
 
 ### Day 7：Week 2 综合验收与复盘（待开始）
 
@@ -411,7 +424,7 @@ Day 5 建议提交信息：`feat: enforce RBAC for business endpoints`
 
 ## 当前执行入口
 
-- 当前里程碑：Week 2 Day 6——事务边界、索引与 `EXPLAIN`
-- 前置状态：Week 2 Day 1～Day 5 已完成并通过自动化测试、真实 HTTP/MySQL 验收
-- 实现边界：只分析和验证事务、索引与执行计划，不提前进入 Week 3 CSV 导入
-- 任务明细：见上方“Day 6：事务边界、索引与 EXPLAIN（待开始）”
+- 当前里程碑：Week 2 Day 7——综合验收与复盘
+- 前置状态：Week 2 Day 1～Day 6 已完成并通过自动化测试、真实 HTTP/MySQL 与空库迁移验收
+- 实现边界：只完成 Week 2 认证授权闭环的综合验收、清理和复盘，不提前进入 Week 3 CSV 导入
+- 任务明细：见上方“Day 7：Week 2 综合验收与复盘（待开始）”

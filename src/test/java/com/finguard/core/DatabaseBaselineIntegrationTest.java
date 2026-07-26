@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("2");
+        assertThat(current.getVersion().getVersion()).isEqualTo("3");
     }
 
     @Test
@@ -79,5 +79,39 @@ class DatabaseBaselineIntegrationTest {
                 assertThat(resultSet.getInt(1)).isEqualTo(5);
             }
         }
+    }
+
+    @Test
+    void transactionPaginationIndexShouldExist() throws SQLException {
+        String sql = """
+                SELECT column_name, collation
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'transactions'
+                  AND index_name = 'idx_transactions_deleted_time_id'
+                ORDER BY seq_in_index
+                """;
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement =
+                     connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            assertIndexColumn(resultSet, "deleted", "A");
+            assertIndexColumn(resultSet, "transaction_time", "D");
+            assertIndexColumn(resultSet, "id", "D");
+            assertThat(resultSet.next()).isFalse();
+        }
+    }
+
+    private void assertIndexColumn(
+            ResultSet resultSet,
+            String expectedColumn,
+            String expectedCollation) throws SQLException {
+        assertThat(resultSet.next()).isTrue();
+        assertThat(resultSet.getString("column_name"))
+                .isEqualTo(expectedColumn);
+        assertThat(resultSet.getString("collation"))
+                .isEqualTo(expectedCollation);
     }
 }
