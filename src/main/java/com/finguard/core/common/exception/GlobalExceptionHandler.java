@@ -4,6 +4,7 @@ import com.finguard.core.account.exception.AccountNotFoundException;
 import com.finguard.core.account.exception.DuplicateAccountNoException;
 import com.finguard.core.account.exception.InvalidAccountInputException;
 import com.finguard.core.account.exception.InvalidAccountOperationException;
+import com.finguard.core.auth.exception.InvalidCredentialsException;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
 import com.finguard.core.transaction.exception.InvalidTransactionInputException;
 import com.finguard.core.transaction.exception.InvalidTransactionOperationException;
@@ -33,6 +34,19 @@ public class GlobalExceptionHandler {
 
     private static final Logger LOGGER =
             LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCredentials(
+            InvalidCredentialsException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.UNAUTHORIZED,
+                ErrorCode.INVALID_CREDENTIALS,
+                InvalidCredentialsException.MESSAGE,
+                request,
+                List.of()
+        );
+    }
 
     @ExceptionHandler(AccountNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleAccountNotFound(

@@ -3,6 +3,7 @@ package com.finguard.core.common.exception;
 public enum ErrorCode {
     VALIDATION_FAILED,
     INVALID_REQUEST,
+    INVALID_CREDENTIALS,
     ACCOUNT_NOT_FOUND,
     TRANSACTION_NOT_FOUND,
     DUPLICATE_ACCOUNT_NO,

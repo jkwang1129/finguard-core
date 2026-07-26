@@ -8,6 +8,21 @@ spring:
     username: "${MYSQL_USER:finguard}"
     password: "${MYSQL_PASSWORD}"
 
+finguard:
+  auth:
+    bootstrap:
+      enabled: "${FINGUARD_AUTH_BOOTSTRAP_ENABLED:false}"
+      admin:
+        username: "${FINGUARD_AUTH_BOOTSTRAP_ADMIN_USERNAME:}"
+        password: "${FINGUARD_AUTH_BOOTSTRAP_ADMIN_PASSWORD:}"
+      reviewer:
+        username: "${FINGUARD_AUTH_BOOTSTRAP_REVIEWER_USERNAME:}"
+        password: "${FINGUARD_AUTH_BOOTSTRAP_REVIEWER_PASSWORD:}"
+    jwt:
+      secret-base64: "${JWT_SECRET_BASE64:}"
+      issuer: "finguard-core"
+      expires-in-seconds: 7200
+
 management:
   endpoints:
     web:

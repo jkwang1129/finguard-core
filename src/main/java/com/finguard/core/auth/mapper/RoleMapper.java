@@ -13,6 +13,13 @@ import java.util.List;
 public interface RoleMapper extends BaseMapper<Role> {
 
     @Select("""
+            SELECT id
+            FROM roles
+            WHERE role_code = #{roleCode}
+            """)
+    Long findIdByRoleCode(@Param("roleCode") RoleCode roleCode);
+
+    @Select("""
             SELECT r.role_code
             FROM roles r
             INNER JOIN user_roles ur ON ur.role_id = r.id

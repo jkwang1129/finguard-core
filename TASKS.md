@@ -175,13 +175,175 @@ Day 2 建议提交信息：`feat: add authentication persistence layer`
 
 ### Day 3：密码校验、登录接口与 JWT 签发
 
-- [ ] 引入 Spring Security 和 JWT 所需的最小依赖
-- [ ] 配置 `PasswordEncoder`，使用 BCrypt 校验密码，接口和日志不得泄露密码
-- [ ] 实现 `UserDetailsService`、认证流程和 `POST /api/auth/login`
-- [ ] 登录成功后签发只包含必要身份、角色、签发时间和过期时间的 JWT
-- [ ] 提供受控的本地验收用户初始化方式：默认关闭，凭据来自环境变量，入库前转换为 BCrypt 哈希
-- [ ] 登录失败统一返回模糊错误，不区分“用户不存在”和“密码错误”
-- [ ] 覆盖登录成功、错误密码、禁用用户和 Token Claims 的测试
+目标：在 Day 2 认证持久层之上完成“用户名密码 → 身份校验 → 签发 JWT”的最小登录闭环。当天签发的 Token 必须能够被测试代码真实验签，但暂不把 Token 接入账户、交易接口，也不实现入站 JWT 过滤链和 RBAC；这些分别属于 Day 4、Day 5。
+
+当日交付物：
+
+- `POST /api/auth/login` 登录接口；
+- BCrypt 密码校验与统一登录失败响应；
+- 使用 HS256 签发、两小时有效的 JWT；
+- 默认关闭、凭据外置、可幂等执行的本地验收用户初始化器；
+- 登录、JWT 和初始化器的自动化测试；
+- 真实 MySQL、HTTP 登录和 Token 验签记录。
+
+#### 任务 1：先讲清登录闭环中的关键知识
+
+- [x] 讲清密码哈希与加密的区别，以及 BCrypt 的随机盐、成本因子和 72 字节输入边界
+- [x] 讲清 `UserDetailsService`、`UserDetails`、`PasswordEncoder`、`AuthenticationManager` 和认证提供者之间的调用关系
+- [x] 讲清 JWT 是“已签名的身份声明”而不是加密数据，也不是权限规则本身
+- [x] 讲清 `iss`、`sub`、`username`、`roles`、`iat`、`exp` 各自的用途和两小时有效期的取舍
+- [x] 讲清为什么“用户名不存在”“密码错误”“用户被禁用”对外必须返回完全相同的 `401`
+- [x] 画出当天请求流：
+  `LoginRequest → AuthController → AuthService → AuthenticationManager → DatabaseUserDetailsService → UserMapper → BCrypt 校验 → JwtTokenIssuer → LoginResponse`
+
+#### 任务 2：引入最小依赖并完成安全基础配置
+
+- [x] 只引入 Day 3 所需的 Spring Security Core、BCrypt 和 JWT/Jose 能力，不提前配置 Resource Server 过滤链
+- [x] 配置 `PasswordEncoder`，统一使用 BCrypt；业务代码不得自行比较明文密码或手写哈希逻辑
+- [x] 建立 `JwtProperties`，从 `JWT_SECRET_BASE64` 读取 Base64 密钥，并固定 `issuer=finguard-core`、`expiresInSeconds=7200`
+- [x] 应用启动时校验密钥存在、Base64 可解码且解码后不少于 32 字节；失败信息只能说明配置项错误，不能输出密钥
+- [x] 为 JWT 签发注入可控 `Clock`，避免测试依赖真实当前时间
+- [x] 为自动化测试提供明确标记为仅测试使用的固定配置，不能把真实密钥写入仓库
+
+涉及文件：
+
+```text
+pom.xml
+src/main/resources/application.yml
+src/main/java/com/finguard/core/auth/config/JwtProperties.java
+src/main/java/com/finguard/core/auth/config/JwtConfiguration.java
+src/main/java/com/finguard/core/auth/config/PasswordConfiguration.java
+src/test/resources/application.properties
+src/test/java/com/finguard/core/auth/config/AuthSecurityConfigurationTest.java
+```
+
+#### 任务 3：定义登录接口契约与参数边界
+
+- [x] 创建 `LoginRequest`，用户名必填，并提供供业务层复用的 `trim + lowercase` 规范化工具
+- [x] 密码必填、区分大小写、不执行 `trim`，并按 UTF-8 字节数校验为 1～72 字节
+- [x] 创建 `LoginResponse`，只返回 `accessToken`、`tokenType=Bearer` 和 `expiresInSeconds`
+- [x] 使用测试专用契约 Controller 验证空用户名、空密码、超长密码和 malformed JSON 继续沿用统一 `400` 错误结构
+- [x] 确认 DTO/VO 的 `toString` 不会包含密码或完整 Token
+- [x] 将生产 `AuthController` 延至任务 4，与真实 `AuthService` 一起接入，避免注册无法工作的假接口
+
+涉及文件：
+
+```text
+src/main/java/com/finguard/core/auth/dto/LoginRequest.java
+src/main/java/com/finguard/core/auth/vo/LoginResponse.java
+src/main/java/com/finguard/core/auth/validation/AuthInputNormalizer.java
+src/main/java/com/finguard/core/auth/validation/NormalizedUsernameLength.java
+src/main/java/com/finguard/core/auth/validation/NormalizedUsernameLengthValidator.java
+src/main/java/com/finguard/core/auth/validation/Utf8ByteLength.java
+src/main/java/com/finguard/core/auth/validation/Utf8ByteLengthValidator.java
+src/test/java/com/finguard/core/auth/dto/LoginContractTest.java
+```
+
+#### 任务 4：实现用户加载、密码校验与统一认证失败
+
+- [x] 创建 `AuthController`，通过 `@Valid` 接收 `LoginRequest`、调用真实 `AuthService` 并返回 `LoginResponse`
+- [x] 实现 `DatabaseUserDetailsService`，复用 Day 2 的 `findAuthUserByNormalizedUsername` 查询并装配角色
+- [x] 将数据库中的 `ACTIVE`、`DISABLED` 状态转换为 Spring Security 能理解的账户状态
+- [x] 配置认证流程，让 BCrypt 比较请求密码与数据库哈希，禁止把数据库哈希传出认证模块
+- [x] 实现 `AuthService`：规范化用户名、发起认证、读取认证成功后的用户 ID 与角色，再调用 JWT 签发器
+- [x] 用户不存在、密码错误和用户禁用统一转换为同一个认证领域异常
+- [x] 在 `ErrorCode` 和 `GlobalExceptionHandler` 中增加 `401 INVALID_CREDENTIALS`，固定消息为 `Invalid username or password`
+- [x] 记录失败时只保留必要的非敏感上下文，不记录密码、哈希、JWT 密钥或完整 Token
+
+任务 4 只定义 `TokenIssuer` 签发端口；任务 5 完成真实 `JwtTokenIssuer` 后，已经移除临时登录开关并正式启用生产登录接口。
+
+涉及文件：
+
+```text
+src/main/java/com/finguard/core/auth/controller/AuthController.java
+src/main/java/com/finguard/core/auth/config/AuthAuthenticationConfiguration.java
+src/main/java/com/finguard/core/auth/model/AuthenticatedUser.java
+src/main/java/com/finguard/core/auth/security/AuthPrincipal.java
+src/main/java/com/finguard/core/auth/security/DatabaseUserDetailsService.java
+src/main/java/com/finguard/core/auth/security/TokenIssuer.java
+src/main/java/com/finguard/core/auth/service/AuthService.java
+src/main/java/com/finguard/core/auth/service/impl/AuthServiceImpl.java
+src/main/java/com/finguard/core/auth/exception/InvalidCredentialsException.java
+src/main/java/com/finguard/core/common/exception/ErrorCode.java
+src/main/java/com/finguard/core/common/exception/GlobalExceptionHandler.java
+src/test/java/com/finguard/core/auth/AuthLoginIntegrationTest.java
+src/test/java/com/finguard/core/auth/config/AuthAuthenticationConfigurationTest.java
+src/test/java/com/finguard/core/auth/controller/AuthControllerTest.java
+src/test/java/com/finguard/core/auth/security/DatabaseUserDetailsServiceTest.java
+src/test/java/com/finguard/core/auth/service/AuthServiceImplTest.java
+```
+
+#### 任务 5：使用框架原生能力签发 JWT
+
+- [x] 实现 `JwtTokenIssuer`，使用框架提供的 JWT 编码器和 HS256，不手写 Base64 拼接或 HMAC 签名
+- [x] `iss` 固定为 `finguard-core`，`sub` 使用用户 ID 字符串
+- [x] 写入规范化 `username` 和排序稳定、无重复的 `roles`
+- [x] 使用注入的 `Clock` 生成 `iat`，并令 `exp = iat + 7200 秒`
+- [x] Token 中不得写入密码、密码哈希、账户数据或其他敏感业务字段
+- [x] 签发测试必须对 Token 真实解码和验签，不能只断言字符串非空
+
+涉及文件：
+
+```text
+src/main/java/com/finguard/core/auth/security/JwtTokenIssuer.java
+src/main/java/com/finguard/core/auth/config/JwtConfiguration.java
+src/test/java/com/finguard/core/auth/security/JwtTokenIssuerTest.java
+src/test/java/com/finguard/core/auth/AuthLoginIntegrationTest.java
+```
+
+#### 任务 6：实现受控的本地验收用户初始化器
+
+- [x] 建立 `AuthBootstrapProperties`，总开关 `FINGUARD_AUTH_BOOTSTRAP_ENABLED` 默认必须为 `false`
+- [x] 开启时从环境变量读取 `ADMIN`、`REVIEWER` 的用户名和密码；缺项时快速失败，但错误信息不得包含凭据
+- [x] 用户名沿用 `trim + lowercase`；验收密码除 BCrypt 的 1～72 字节限制外，至少 12 个字符
+- [x] 密码入库前先转为 BCrypt 哈希，数据库中绝不能出现明文密码
+- [x] 在一个事务中完成用户创建和角色绑定，防止只创建用户但未分配角色
+- [x] 重复启动必须幂等：已存在的同名用户不重复创建、不重复绑定角色，也不静默覆盖旧密码
+- [x] 默认关闭时不得查询、创建或修改任何认证数据
+
+涉及文件：
+
+```text
+src/main/java/com/finguard/core/auth/bootstrap/AuthBootstrapProperties.java
+src/main/java/com/finguard/core/auth/bootstrap/AuthBootstrapRunner.java
+src/main/java/com/finguard/core/auth/mapper/RoleMapper.java
+src/test/java/com/finguard/core/auth/bootstrap/AuthBootstrapIntegrationTest.java
+src/test/java/com/finguard/core/auth/bootstrap/AuthBootstrapRunnerTest.java
+```
+
+#### 任务 7：建立分层自动化测试
+
+- [x] `AuthService` 单元测试覆盖成功登录、用户名规范化、用户不存在、错误密码和禁用用户
+- [x] 验证三种认证失败得到完全相同的 `401` 错误码和消息
+- [x] `AuthController` 测试覆盖成功响应、字段校验和 malformed JSON
+- [x] JWT 测试覆盖签发方、用户 ID、用户名、角色、签发时间、过期时间和真实签名验证
+- [x] JWT 配置测试覆盖缺少密钥、非法 Base64 和解码后不足 256 bit
+- [x] 初始化器集成测试覆盖默认关闭、成功创建、BCrypt 入库、正确角色绑定、重复执行幂等和配置缺失
+- [x] 运行 `mvn clean test`，要求全部测试通过且无跳过项
+
+#### 任务 8：完成真实 MySQL 与 HTTP 验收
+
+- [x] 先运行 `docker compose ps`，确认 `finguard-mysql` 为 `healthy`
+- [x] 使用临时环境变量开启初始化器并创建验收 `ADMIN`、`REVIEWER`，不把凭据写入 `.env`、命令历史或文档
+- [x] 启动应用并轮询 `/actuator/health`，确认返回 `UP`
+- [x] 用正确管理员凭据请求 `POST /api/auth/login`，确认返回 `200`、`Bearer` 和 `7200`
+- [x] 对返回的 JWT 真实验签并检查 Claims，不在验收输出中打印完整 Token
+- [x] 分别验证错误密码、不存在用户和禁用用户均返回同样的 `401 INVALID_CREDENTIALS`
+- [x] 查询 MySQL，确认只保存 BCrypt 哈希且没有明文密码
+- [x] 清理验收用户与角色绑定，确认残留计数为零，关闭临时初始化开关并释放 8080 端口
+- [x] 运行 `git diff --check` 并检查改动只属于 Day 3
+
+#### Day 3 验收标准
+
+- [x] 正确凭据能够获得一个可真实验签、两小时有效的 JWT
+- [x] JWT 只包含约定的必要 Claims，不包含任何密码或敏感业务数据
+- [x] 用户不存在、密码错误和用户禁用不会泄露账号状态
+- [x] 本地初始化器默认关闭、凭据外置、密码哈希入库且重复执行幂等
+- [x] 原有账户、交易、分页、异常处理和数据库测试没有回归
+- [x] 未提前实现 JWT 入站校验、无状态过滤链、账户/交易接口保护或 RBAC
+- [x] 自动化测试、真实 HTTP/MySQL 验收和工作区格式检查全部通过
+
+Day 3 建议提交信息：`feat: implement login and JWT issuance`
 
 ### Day 4：无状态 Security 过滤链与 JWT 校验
 
@@ -224,10 +386,12 @@ Day 2 建议提交信息：`feat: add authentication persistence layer`
 
 ## 今天的最小任务
 
-- [x] 完成 Week 2 Day 2：认证表、Flyway V2 与持久层
-- [x] 讲清迁移、约束、索引、Mapper 和测试夹具的职责边界
-- [x] 创建 `users`、`roles`、`user_roles` 并初始化固定角色
-- [x] 建立认证 Entity、枚举、Mapper 和最小认证查询对象
-- [x] 使用测试夹具验证唯一约束、外键、删除限制和角色装配
-- [x] 运行 `mvn clean test`，94 个测试全部通过且无跳过项
-- [x] 使用独立空库验证 Flyway 可一次执行 V1 到 V2，且测试数据清理为零
+- [x] 完成 Week 2 Day 3：密码校验、登录接口与 JWT 签发
+- [x] 先讲清 BCrypt、Spring Security 认证流程、JWT Claims 和统一登录失败策略
+- [x] 完成最小安全依赖、密码编码器、JWT 配置和登录 DTO/VO
+- [x] 完成用户加载、认证 Service 和登录 Controller
+- [x] 完成 JWT 签发器
+- [x] 完成默认关闭、凭据外置、可幂等执行的本地验收用户初始化器
+- [x] 覆盖登录成功、统一失败、参数校验、JWT Claims/签名和初始化器测试
+- [x] 运行完整测试并完成真实 MySQL、HTTP 登录、Token 验签和数据清理
+- [x] 确认当天不提前实现 Day 4 的 JWT 入站过滤链或 Day 5 的 RBAC

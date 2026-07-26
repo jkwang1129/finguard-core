@@ -21,13 +21,20 @@ public class AuthTestFixture {
     }
 
     public Long insertUser(String username, UserStatus status) {
+        return insertUser(username, status, TEST_PASSWORD_HASH);
+    }
+
+    public Long insertUser(
+            String username,
+            UserStatus status,
+            String passwordHash) {
         jdbcTemplate.update(
                 """
                 INSERT INTO users (username, password_hash, status)
                 VALUES (?, ?, ?)
                 """,
                 username,
-                TEST_PASSWORD_HASH,
+                passwordHash,
                 status.name()
         );
 
@@ -43,6 +50,14 @@ public class AuthTestFixture {
                 "SELECT id FROM roles WHERE role_code = ?",
                 Long.class,
                 roleCode
+        );
+    }
+
+    public Long userId(String username) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                Long.class,
+                username
         );
     }
 
