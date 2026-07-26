@@ -9,9 +9,9 @@
 |---|---|---|
 | 阶段 0 | 已完成 | 工程、Git、Spring Boot 与健康检查基线已建立 |
 | 第 1 周 | 已完成 | 账户、交易 CRUD、分页、统一错误处理和周验收已完成 |
-| 第 2 周 Day 1～Day 4 | 已完成 | 认证设计、持久层、登录、JWT 签发、无状态过滤链和入站校验已完成 |
-| 第 2 周 Day 5 | 下一步 | 按权限矩阵完成账户、交易接口的 RBAC |
-| 第 2 周 Day 6～Day 7 | 待开始 | 事务与索引、Week 2 综合验收 |
+| 第 2 周 Day 1～Day 5 | 已完成 | 认证持久层、登录、JWT、无状态过滤链和账户/交易 RBAC 已完成 |
+| 第 2 周 Day 6 | 下一步 | 事务边界、索引与 `EXPLAIN` |
+| 第 2 周 Day 7 | 待开始 | Week 2 综合验收与复盘 |
 
 ## 阶段 0：工程基线（已完成）
 
@@ -367,14 +367,26 @@ Day 3 建议提交信息：`feat: implement login and JWT issuance`
 - [x] 为未登录、Token 格式错误、签名错误和 Token 过期实现统一 `401` 响应
 - [x] 增加完整 Spring 上下文安全集成测试，不用仅能覆盖 MVC 的伪安全测试代替
 
-### Day 5：RBAC 与现有接口授权（下一步）
+### Day 5：RBAC 与现有接口授权（已完成）
 
-- [ ] 按权限矩阵保护账户和交易的查询、创建、修改、状态切换与删除接口
-- [ ] 验证 `ADMIN` 可以完成账户、交易完整操作
-- [ ] 验证 `REVIEWER` 可以查询但不能写入账户或交易
-- [ ] 为权限不足实现统一 `403` 响应，并明确它与 `401` 的区别
-- [ ] 覆盖匿名、`ADMIN`、`REVIEWER` 的接口权限矩阵测试
-- [ ] 在真实 MySQL 上用真实登录 Token 走通登录、查询、写入和越权拒绝流程
+- [x] 按权限矩阵保护账户和交易的查询、创建、修改、状态切换与删除接口
+- [x] 验证 `ADMIN` 可以完成账户、交易完整操作
+- [x] 验证 `REVIEWER` 可以查询但不能写入账户或交易
+- [x] 为权限不足实现统一 `403` 响应，并明确它与 `401` 的区别
+- [x] 覆盖匿名、`ADMIN`、`REVIEWER` 的接口权限矩阵测试
+- [x] 在真实 MySQL 上用真实登录 Token 走通登录、查询、写入和越权拒绝流程
+
+Day 5 验收记录：
+
+- 在 `SecurityConfiguration` 集中声明权限矩阵：账户和交易的列表、详情查询允许 `ADMIN`、`REVIEWER`，七类写接口只允许 `ADMIN`
+- 新增 `RestAccessDeniedHandler` 和 `ACCESS_DENIED`，已认证但权限不足统一返回 `403`、`Insufficient permissions`，且不返回 `WWW-Authenticate`
+- `RbacAuthorizationIntegrationTest` 使用完整 Spring 上下文覆盖 ADMIN 全操作、REVIEWER 四类读取与七类写入拒绝、匿名 11 个路由的 `401`、无角色 Token 的 `403`
+- 修复 JWT 篡改测试偶尔修改 Base64URL 非有效位的问题，改为修改签名段首字符，确保测试真实改变签名字节
+- `mvn clean test` 共 155 项测试全部通过，无失败、错误或跳过
+- 真实验收确认健康状态 `UP`、ADMIN/REVIEWER 登录成功、ADMIN 读写成功、REVIEWER 只读和七类越权写入全部正确拒绝
+- REVIEWER 越权请求未改变数据库；验收用户密码为 BCrypt；交易、账户、用户角色和用户清理计数均为零，8080 端口已释放
+
+Day 5 建议提交信息：`feat: enforce RBAC for business endpoints`
 
 ### Day 6：事务边界、索引与 EXPLAIN（待开始）
 
@@ -399,7 +411,7 @@ Day 3 建议提交信息：`feat: implement login and JWT issuance`
 
 ## 当前执行入口
 
-- 当前里程碑：Week 2 Day 5——RBAC 与现有账户、交易接口授权
-- 前置状态：Week 2 Day 1～Day 4 已完成并通过自动化测试、真实 HTTP/MySQL 验收
-- 实现边界：只完成现有接口权限矩阵和统一 `403`；事务与索引仍属于 Day 6
-- 任务明细：见上方“Day 5：RBAC 与现有接口授权（下一步）”
+- 当前里程碑：Week 2 Day 6——事务边界、索引与 `EXPLAIN`
+- 前置状态：Week 2 Day 1～Day 5 已完成并通过自动化测试、真实 HTTP/MySQL 验收
+- 实现边界：只分析和验证事务、索引与执行计划，不提前进入 Week 3 CSV 导入
+- 任务明细：见上方“Day 6：事务边界、索引与 EXPLAIN（待开始）”

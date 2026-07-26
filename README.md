@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 1 已完成：工程基线、账户与交易数据模型、MySQL/Flyway/MyBatis-Plus 基线、账户与人工交易 CRUD、分页条件查询、统一错误处理以及 Week 1 综合验收均已完成。
+当前进度为 Week 2 Day 5 已完成：在 Week 1 的账户、人工交易、分页和统一错误处理基础上，已经完成认证持久层、用户名密码登录、JWT 签发与校验、无状态 Security Filter Chain，以及账户和交易接口的 RBAC。
 
 ## 当前技术基线
 
@@ -11,6 +11,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - Spring Boot 3.5.16
 - Spring MVC
 - Spring Boot Actuator
+- Spring Security
+- OAuth2 Resource Server / JWT
+- BCrypt
 - Jakarta Validation
 - MyBatis-Plus 3.5.17
 - MySQL 8.4.10
@@ -30,8 +33,13 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 账户和交易软删除后的历史编号保留；
 - 账户按状态、类型和关键词分页查询；
 - 交易按账户、方向、来源、流水号和时间范围分页查询；
+- 用户、角色和用户角色关系的 Flyway 持久化；
+- BCrypt 密码校验和两小时有效的 HS256 JWT；
+- 无状态 Bearer Token 认证，不创建服务端 Session；
+- `ADMIN` 可读写账户和交易，`REVIEWER` 只读；
+- 统一的 `401` 认证失败和 `403` 权限不足响应；
 - 统一错误响应以及 `400`、`404`、`409`、`500` 状态映射；
-- 86 个自动化测试，以及真实 MySQL HTTP CRUD、分页和错误响应验收。
+- 155 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、分页、认证和 RBAC 验收。
 
 ## 本地运行
 
@@ -91,6 +99,14 @@ GET http://localhost:8080/actuator/health
 
 ## 当前接口
 
+### 认证
+
+```text
+POST   /api/auth/login
+```
+
+登录和健康检查允许匿名访问。其余账户、交易接口必须携带合法的 Bearer Token。
+
 ### 账户
 
 ```text
@@ -102,6 +118,8 @@ PATCH  /api/accounts/{accountId}/status
 DELETE /api/accounts/{accountId}
 ```
 
+账户的两个查询接口允许 `ADMIN`、`REVIEWER`，其余写接口仅允许 `ADMIN`。
+
 ### 交易
 
 ```text
@@ -111,6 +129,8 @@ GET    /api/transactions/{transactionId}
 PUT    /api/transactions/{transactionId}
 DELETE /api/transactions/{transactionId}
 ```
+
+交易的两个查询接口允许 `ADMIN`、`REVIEWER`，其余写接口仅允许 `ADMIN`。
 
 当前交易创建接口只创建 `MANUAL` 交易。`CSV_IMPORT` 将由后续 CSV 导入流程内部创建，客户端不能自行指定交易来源。
 
@@ -131,7 +151,7 @@ DELETE /api/transactions/{transactionId}
 
 ## 当前限制
 
-- 尚未实现 Security、JWT 和 RBAC；
+- 尚未完成 Week 2 的事务边界、索引和 `EXPLAIN` 分析；
 - 尚未实现 CSV 导入、自动对账、审核和审计；
 - 尚未引入 Redis 和 RabbitMQ。
 

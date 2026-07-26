@@ -94,13 +94,12 @@ class JwtAuthenticationIntegrationTest {
                 Instant.now().minusSeconds(5),
                 Instant.now().plusSeconds(300)
         );
-        char finalCharacter =
-                validToken.charAt(validToken.length() - 1);
-        char replacement = finalCharacter == 'a' ? 'b' : 'a';
-        String tamperedToken = validToken.substring(
-                0,
-                validToken.length() - 1
-        ) + replacement;
+        int signatureStart = validToken.lastIndexOf('.') + 1;
+        char signatureCharacter = validToken.charAt(signatureStart);
+        char replacement = signatureCharacter == 'a' ? 'b' : 'a';
+        String tamperedToken = validToken.substring(0, signatureStart)
+                + replacement
+                + validToken.substring(signatureStart + 1);
 
         assertInvalidToken(tamperedToken);
     }
