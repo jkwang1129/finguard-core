@@ -1,6 +1,19 @@
 # FinGuard Core 任务清单
 
-## 阶段 0：工程基线
+> 本文保留已完成里程碑的验收记录，并以复选框作为任务状态的唯一依据。
+> “当前执行入口”只指向下一个里程碑，不重复复制详细任务。
+
+## 当前进度
+
+| 阶段 | 状态 | 当前结论 |
+|---|---|---|
+| 阶段 0 | 已完成 | 工程、Git、Spring Boot 与健康检查基线已建立 |
+| 第 1 周 | 已完成 | 账户、交易 CRUD、分页、统一错误处理和周验收已完成 |
+| 第 2 周 Day 1～Day 4 | 已完成 | 认证设计、持久层、登录、JWT 签发、无状态过滤链和入站校验已完成 |
+| 第 2 周 Day 5 | 下一步 | 按权限矩阵完成账户、交易接口的 RBAC |
+| 第 2 周 Day 6～Day 7 | 待开始 | 事务与索引、Week 2 综合验收 |
+
+## 阶段 0：工程基线（已完成）
 
 - [x] 检查当前目录和已有文件
 - [x] 确认 JDK 17 可用
@@ -15,18 +28,18 @@
 - [x] 建立 `README.md` 和 `TASKS.md`
 - [x] 完成第一次 Git 提交
 
-## 第 1 周任务清单
+## 第 1 周任务清单（已完成）
 
 目标：完成工程基线、数据库设计，以及账户与交易的最小 CRUD；学习 Maven、Spring MVC、分层、MySQL 和 REST。
 
-### Day 1：环境与最小骨架
+### Day 1：环境与最小骨架（已完成）
 
-- 完成阶段 0 全部验收项
-- 理解 Maven 项目结构、依赖管理和常用生命周期
-- 理解 Spring Boot 启动流程与 Actuator 健康检查
-- 保留一次清晰的初始 Git 提交
+- [x] 完成阶段 0 全部验收项
+- [x] 理解 Maven 项目结构、依赖管理和常用生命周期
+- [x] 理解 Spring Boot 启动流程与 Actuator 健康检查
+- [x] 保留一次清晰的初始 Git 提交
 
-### Day 2：需求与数据模型
+### Day 2：需求与数据模型（已完成）
 
 - [x] 明确账户、交易的最小业务规则和验收标准
 - [x] 绘制第一版 ER 图
@@ -35,14 +48,14 @@
 - [x] 提交 Day 2 设计文档
 - 设计文档：[`docs/design/day2-requirements-and-data-model.md`](docs/design/day2-requirements-and-data-model.md)
 
-### Day 3：MySQL 与迁移基线
+### Day 3：MySQL 与迁移基线（已完成）
 
 - [x] 用 Docker Compose 启动 MySQL
 - [x] 配置数据源和 MyBatis-Plus
 - [x] 引入 Flyway 并创建首个最小迁移
 - [x] 验证应用能连接数据库
 
-### Day 4：账户 CRUD
+### Day 4：账户 CRUD（已完成）
 
 - [x] 讲清 Controller、Service、Mapper 以及 DTO、Entity 的职责边界
 - [x] 建立账户模块骨架和创建、查询、改名、状态切换、软删除接口
@@ -54,7 +67,7 @@
 - [x] 验证活动账户不能删除、软删除账户默认查不到且编号不能复用
 - [x] 将统一错误响应以及 404/409 状态映射按计划留到 Day 6
 
-### Day 5：交易 CRUD
+### Day 5：交易 CRUD（已完成）
 
 - [x] 明确金额使用 `BigDecimal` 的精度与舍入约束
 - [x] 讲清交易时间、业务流水号、`MANUAL` 来源和数据库唯一约束
@@ -67,7 +80,7 @@
 - [x] 验证禁用账户不能创建或删除交易、重复删除幂等成功
 - [x] 验证软删除交易默认查不到、原流水号不能复用且失败请求未写入数据库
 
-### Day 6：查询与错误处理
+### Day 6：查询与错误处理（已完成）
 
 - [x] 完成账户和交易的基础分页、稳定排序与组合条件查询
 - [x] 建立统一错误响应与全局异常处理，完成 `400`、`404`、`409`、`500` 映射
@@ -76,7 +89,7 @@
 - [x] 真实启动应用并验证分页查询、参数错误、资源不存在、重复数据和非法状态操作
 - [x] 精确清理 HTTP 验收数据并确认 8080 端口释放
 
-### Day 7：周验收与复盘
+### Day 7：周验收与复盘（已完成）
 
 - [x] 从空环境实际运行本周流程
 - [x] 整理学习笔记、常见错误和面试问题
@@ -84,7 +97,7 @@
 - [x] 检查 Git 历史是否连续且每次提交可解释
 - [x] 只在本周目标稳定后进入第 2 周
 
-## 第 2 周任务清单
+## 第 2 周任务清单（进行中）
 
 目标：完成最小认证与授权闭环，用 Spring Security、JWT 和 RBAC 保护现有账户、交易接口；结合真实查询学习事务边界、索引和 `EXPLAIN`。Week 1 已完成的分页与 Flyway 基线不重复开发，本周只做增量迁移和安全集成。
 
@@ -97,7 +110,7 @@
 - 认证失败返回 `401`，已认证但权限不足返回 `403`，并沿用统一错误响应结构
 - 不修改已经执行的 `V1`，认证表和索引通过新的 Flyway 迁移创建
 
-### Day 1：认证需求、权限矩阵与技术方案
+### Day 1：认证需求、权限矩阵与技术方案（已完成）
 
 目标：先锁定“谁可以通过什么方式访问哪些接口”，形成 Day 2～Day 5 的唯一设计依据。当天只做知识学习、方案设计、文档和基线验证，不修改 `pom.xml`、Java 代码、配置文件或数据库迁移。
 
@@ -161,7 +174,7 @@
 
 Day 1 建议提交信息：`docs: design authentication and authorization`
 
-### Day 2：认证表、Flyway V2 与持久层
+### Day 2：认证表、Flyway V2 与持久层（已完成）
 
 - [x] 新增 Flyway `V2`，创建 `users`、`roles`、`user_roles` 表并初始化 `ADMIN`、`REVIEWER` 角色
 - [x] 为用户名唯一性、用户角色关联和外键关系建立必要约束与索引
@@ -173,7 +186,7 @@ Day 1 建议提交信息：`docs: design authentication and authorization`
 
 Day 2 建议提交信息：`feat: add authentication persistence layer`
 
-### Day 3：密码校验、登录接口与 JWT 签发
+### Day 3：密码校验、登录接口与 JWT 签发（已完成）
 
 目标：在 Day 2 认证持久层之上完成“用户名密码 → 身份校验 → 签发 JWT”的最小登录闭环。当天签发的 Token 必须能够被测试代码真实验签，但暂不把 Token 接入账户、交易接口，也不实现入站 JWT 过滤链和 RBAC；这些分别属于 Day 4、Day 5。
 
@@ -345,16 +358,16 @@ src/test/java/com/finguard/core/auth/bootstrap/AuthBootstrapRunnerTest.java
 
 Day 3 建议提交信息：`feat: implement login and JWT issuance`
 
-### Day 4：无状态 Security 过滤链与 JWT 校验
+### Day 4：无状态 Security 过滤链与 JWT 校验（已完成）
 
-- [ ] 讲清 Security Filter Chain、SecurityContext 和 Bearer Token 请求流
-- [ ] 配置无状态会话，不使用服务端 Session 保存登录状态
-- [ ] 放行健康检查和登录接口，其他业务接口默认要求合法 JWT
-- [ ] 校验 JWT 签名、格式和过期时间，并将角色转换为 Spring Security 权限
-- [ ] 为未登录、Token 格式错误、签名错误和 Token 过期实现统一 `401` 响应
-- [ ] 增加完整 Spring 上下文安全集成测试，不用仅能覆盖 MVC 的伪安全测试代替
+- [x] 讲清 Security Filter Chain、SecurityContext 和 Bearer Token 请求流
+- [x] 配置无状态会话，不使用服务端 Session 保存登录状态
+- [x] 放行健康检查和登录接口，其他业务接口默认要求合法 JWT
+- [x] 校验 JWT 签名、格式和过期时间，并将角色转换为 Spring Security 权限
+- [x] 为未登录、Token 格式错误、签名错误和 Token 过期实现统一 `401` 响应
+- [x] 增加完整 Spring 上下文安全集成测试，不用仅能覆盖 MVC 的伪安全测试代替
 
-### Day 5：RBAC 与现有接口授权
+### Day 5：RBAC 与现有接口授权（下一步）
 
 - [ ] 按权限矩阵保护账户和交易的查询、创建、修改、状态切换与删除接口
 - [ ] 验证 `ADMIN` 可以完成账户、交易完整操作
@@ -363,7 +376,7 @@ Day 3 建议提交信息：`feat: implement login and JWT issuance`
 - [ ] 覆盖匿名、`ADMIN`、`REVIEWER` 的接口权限矩阵测试
 - [ ] 在真实 MySQL 上用真实登录 Token 走通登录、查询、写入和越权拒绝流程
 
-### Day 6：事务边界、索引与 EXPLAIN
+### Day 6：事务边界、索引与 EXPLAIN（待开始）
 
 - [ ] 梳理认证和现有账户、交易 Service 的事务边界，区分只读事务与写事务
 - [ ] 不为演示事务硬加业务接口；通过测试专用的用户与角色多表写入微实验验证 `@Transactional` 异常时整体回滚
@@ -373,7 +386,7 @@ Day 3 建议提交信息：`feat: implement login and JWT issuance`
 - [ ] 只根据真实查询和执行计划新增必要索引，不为“看起来可能有用”的字段堆索引
 - [ ] 记录事务回滚与索引分析结果，并运行完整测试
 
-### Day 7：Week 2 综合验收与复盘
+### Day 7：Week 2 综合验收与复盘（待开始）
 
 - [ ] 从空库执行 Flyway `V1` 到最新迁移，确认认证表、约束和角色初始化正确
 - [ ] 运行 `mvn clean test`，全部测试通过且无跳过项
@@ -384,14 +397,9 @@ Day 3 建议提交信息：`feat: implement login and JWT issuance`
 - [ ] 整理 Week 2 知识点、常见错误、面试问题、Git 历史和复盘文档
 - [ ] 只在认证授权闭环稳定后进入第 3 周 CSV 导入
 
-## 今天的最小任务
+## 当前执行入口
 
-- [x] 完成 Week 2 Day 3：密码校验、登录接口与 JWT 签发
-- [x] 先讲清 BCrypt、Spring Security 认证流程、JWT Claims 和统一登录失败策略
-- [x] 完成最小安全依赖、密码编码器、JWT 配置和登录 DTO/VO
-- [x] 完成用户加载、认证 Service 和登录 Controller
-- [x] 完成 JWT 签发器
-- [x] 完成默认关闭、凭据外置、可幂等执行的本地验收用户初始化器
-- [x] 覆盖登录成功、统一失败、参数校验、JWT Claims/签名和初始化器测试
-- [x] 运行完整测试并完成真实 MySQL、HTTP 登录、Token 验签和数据清理
-- [x] 确认当天不提前实现 Day 4 的 JWT 入站过滤链或 Day 5 的 RBAC
+- 当前里程碑：Week 2 Day 5——RBAC 与现有账户、交易接口授权
+- 前置状态：Week 2 Day 1～Day 4 已完成并通过自动化测试、真实 HTTP/MySQL 验收
+- 实现边界：只完成现有接口权限矩阵和统一 `403`；事务与索引仍属于 Day 6
+- 任务明细：见上方“Day 5：RBAC 与现有接口授权（下一步）”

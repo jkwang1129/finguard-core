@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,7 @@ class AuthSecurityConfigurationTest {
             assertThat(context).hasSingleBean(Clock.class);
             assertThat(context).hasSingleBean(JwtProperties.class);
             assertThat(context).hasSingleBean(JwtEncoder.class);
+            assertThat(context).hasSingleBean(JwtDecoder.class);
 
             PasswordEncoder passwordEncoder =
                     context.getBean(PasswordEncoder.class);
