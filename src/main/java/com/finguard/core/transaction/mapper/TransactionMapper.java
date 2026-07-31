@@ -103,6 +103,109 @@ public interface TransactionMapper extends BaseMapper<Transaction> {
                    updated_at AS updatedAt,
                    deleted
             FROM transactions
+            WHERE import_job_id = #{importJobId}
+              AND source = 'CSV_IMPORT'
+              AND deleted = 0
+            ORDER BY id ASC
+            """)
+    List<Transaction> selectImportedByJobId(
+            @Param("importJobId") Long importJobId
+    );
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM transactions
+            WHERE import_job_id = #{importJobId}
+              AND source = 'CSV_IMPORT'
+              AND deleted = 0
+            """)
+    long countImportedByJobId(
+            @Param("importJobId") Long importJobId
+    );
+
+    @Select("""
+            <script>
+            SELECT id,
+                   account_id AS accountId,
+                   import_job_id AS importJobId,
+                   external_transaction_no AS externalTransactionNo,
+                   direction,
+                   amount,
+                   transaction_time AS transactionTime,
+                   description,
+                   source,
+                   created_at AS createdAt,
+                   updated_at AS updatedAt,
+                   deleted
+            FROM transactions
+            WHERE source = 'MANUAL'
+              AND deleted = 0
+              AND (account_id, external_transaction_no) IN
+              <foreach collection="businessKeys"
+                       item="businessKey"
+                       open="("
+                       separator=","
+                       close=")">
+                (#{businessKey.accountId},
+                 #{businessKey.externalTransactionNo})
+              </foreach>
+            ORDER BY id ASC
+            </script>
+            """)
+    List<Transaction> selectManualByBusinessKeys(
+            @Param("businessKeys")
+            List<TransactionBusinessKey> businessKeys
+    );
+
+    @Select("""
+            <script>
+            SELECT id,
+                   account_id AS accountId,
+                   import_job_id AS importJobId,
+                   external_transaction_no AS externalTransactionNo,
+                   direction,
+                   amount,
+                   transaction_time AS transactionTime,
+                   description,
+                   source,
+                   created_at AS createdAt,
+                   updated_at AS updatedAt,
+                   deleted
+            FROM transactions
+            WHERE source = 'MANUAL'
+              AND deleted = 0
+              AND account_id IN
+              <foreach collection="accountIds"
+                       item="accountId"
+                       open="("
+                       separator=","
+                       close=")">
+                #{accountId}
+              </foreach>
+              AND transaction_time BETWEEN #{fromTime} AND #{toTime}
+            ORDER BY account_id ASC, transaction_time ASC, id ASC
+            </script>
+            """)
+    List<Transaction> selectManualByAccountsAndTime(
+            @Param("accountIds") List<Long> accountIds,
+            @Param("fromTime") LocalDateTime fromTime,
+            @Param("toTime") LocalDateTime toTime
+    );
+
+    @Select("""
+            SELECT id,
+                   account_id AS accountId,
+                   import_job_id AS importJobId,
+                   external_transaction_no AS externalTransactionNo,
+                   direction,
+                   amount,
+                   transaction_time AS transactionTime,
+                   description,
+                   source,
+                   created_at AS createdAt,
+                   updated_at AS updatedAt,
+                   deleted
+            FROM transactions
             WHERE id = #{transactionId}
             """)
     Transaction selectByIdIncludingDeleted(

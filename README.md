@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 3 Day 5 已完成：系统已经能够通过受保护的 multipart 接口同步导入 CSV，按原始字节哈希保证文件幂等，推进任务状态，并批量写入合法交易和行错误。下一里程碑是 Week 3 Day 6：设计并实现同步版自动对账。
+当前进度为 Week 3 Day 6 已完成：系统已经能够对一个成功或部分成功的 CSV 导入任务同步执行可解释的一对一自动对账，稳定产生匹配、未匹配、重复和可疑结果，并支持幂等触发、结果筛选分页和失败恢复。下一里程碑是 Week 3 Day 7 综合验收。
 
 ## 当前技术基线
 
@@ -46,7 +46,11 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - CSV 六字段规范化与业务校验、批量账户解析、文件内重复和数据库重复判断；
 - 同步 CSV 上传、哈希幂等、任务状态机、500 行批量写入、唯一键竞态降级和独立失败恢复；
 - 导入任务详情和行错误分页；`ADMIN` 可上传，`ADMIN`、`REVIEWER` 可查询；
-- 214 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、CSV 导入、分页、认证、RBAC、事务、索引和应用健康验收。
+- 对账任务和逐笔结果的 V6 持久层、外键/检查约束、导入任务唯一幂等和稳定结果分页；
+- 强流水号优先、金额/方向/三天时间窗口补充的一对一两阶段对账，输出 `MATCHED`、`UNMATCHED`、`DUPLICATE` 和 `SUSPICIOUS`；
+- 同步对账触发、任务详情和结果类型筛选；`ADMIN` 可触发，`ADMIN`、`REVIEWER` 可查询；
+- 500 条分批候选查询与结果写入、并发触发幂等、结果/统计原子提交和独立失败恢复；
+- 230 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、CSV 导入、自动对账、分页、认证、RBAC、事务、索引和应用健康验收。
 
 ## 本地运行
 
@@ -163,6 +167,18 @@ GET    /api/import-jobs/{importJobId}/errors?page=1&size=20
 
 上传接口使用 `multipart/form-data` 的 `file` 字段，只允许 `ADMIN`，文件最大 5 MiB。首次接收某组原始字节时返回 `201 + Location`；再次上传相同字节时返回已有任务的 `200`，且 `duplicateFile=true`。任务详情和错误分页允许 `ADMIN`、`REVIEWER` 查询。
 
+### 自动对账
+
+```text
+POST   /api/reconciliation-jobs
+GET    /api/reconciliation-jobs/{reconciliationJobId}
+GET    /api/reconciliation-jobs/{reconciliationJobId}/results?page=1&size=20&resultType=MATCHED
+```
+
+触发接口接收 JSON `{"importJobId": 1}`，只允许 `ADMIN`。首次同步执行返回 `201 + Location`；相同导入任务再次或并发触发返回已有任务的 `200`，且 `duplicateRequest=true`。任务详情和结果分页允许 `ADMIN`、`REVIEWER` 查询。
+
+第一版只比较同账户、未删除的 `CSV_IMPORT` 与 `MANUAL` 交易：优先使用大小写敏感的外部流水号，再使用方向、精确金额和前后 3 天时间窗口。系统不修改原交易，逐笔保存匹配方式和稳定原因码。
+
 错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
 
 ```json
@@ -178,8 +194,9 @@ GET    /api/import-jobs/{importJobId}/errors?page=1&size=20
 
 ## 当前限制
 
-- 尚未实现自动对账、风险识别、异常审核和审计；
+- 尚未实现风险识别、异常审核和审计；
 - CSV 导入当前为同步处理，尚未提供失败任务重试、强制重跑或覆盖导入；
+- 自动对账当前为同步触发，不提供失败任务重试、复杂模糊匹配、金额容差或人工确认；
 - 尚未引入 Redis 和 RabbitMQ。
 
 ## 当前范围

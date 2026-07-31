@@ -24,8 +24,8 @@
 | Week 3 Day 3 | 已完成 | 原始文件校验、SHA-256 指纹、CSV 结构解析和边界测试完成 |
 | Week 3 Day 4 | 已完成 | 逐行规范化、批量账户解析、文件内/数据库重复判断和真实 MySQL 验收完成 |
 | Week 3 Day 5 | 已完成 | 同步上传、文件哈希幂等、状态流转、批量持久化、失败恢复和权限验收完成 |
-| Week 3 Day 6 | 下一步 | 设计并实现同步版自动对账 |
-| Week 3 Day 7 | 待规划 | Week 3 综合验收 |
+| Week 3 Day 6 | 已完成 | 同步自动对账、四类结果、幂等、批处理、失败恢复和权限验收完成 |
+| Week 3 Day 7 | 下一步 | Week 3 综合验收 |
 | Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
@@ -561,6 +561,109 @@
 - **验收结论**：首次真实上传返回 `201/PARTIAL_SUCCESS`，相同原始字节再次上传返回同一任务的 `200`；REVIEWER 查询为 `200`、上传为 `403`，匿名查询为 `401`。数据库状态、统计和关联记录一致，验收用户、账户、任务、交易、错误、临时文件和监听端口均已清理。
 - **提交**：`feat: implement synchronous CSV import`
 
+### Week 3 Day 6：同步版自动对账
+
+- **状态**：已完成
+- **业务目标**：以一个已经完成的 CSV 导入任务为边界，把其中成功入库的外部 `CSV_IMPORT` 交易与系统中的内部 `MANUAL` 交易进行可解释、可重复执行的自动对账，持久化 `MATCHED / UNMATCHED / DUPLICATE / SUSPICIOUS` 结果，为 Week 5 的人工审核与审计留下稳定输入。
+- **请求流**：
+
+  ```text
+  ADMIN 提交 importJobId
+    → 校验导入任务存在且状态为 SUCCESS / PARTIAL_SUCCESS
+    → 按 importJobId 幂等查找或创建 PENDING 对账任务
+    → 条件式推进为 PROCESSING
+    → 读取该任务下未删除的 CSV_IMPORT 交易
+    → 分批读取同账户、未删除的 MANUAL 候选交易
+    → 先保留外部流水号一致的候选，再执行金额/方向/时间窗口规则
+    → 稳定判定 MATCHED / UNMATCHED / DUPLICATE / SUSPICIOUS
+    → 同一事务写入逐笔结果、汇总统计并完成任务
+    → 首次返回 201 + Location；重复触发返回原任务 200
+  ```
+
+- **第一版对账规则**：
+  - 只在同一账户内比较 `CSV_IMPORT` 与 `MANUAL`；两边已软删除的交易均不参与，描述字段不参与匹配。
+  - 金额使用 `BigDecimal.compareTo` 精确比较，方向必须一致，外部流水号继续按大小写敏感语义比较。
+  - 时间容差固定为前后 3 天且包含边界；第一版不做金额误差、汇率、多时区、文本相似度或机器学习模糊匹配。
+  - 同账户、外部流水号、方向、金额和时间完全一致，结果为 `MATCHED`，匹配方式为 `EXACT`。
+  - 外部流水号一致，且方向、金额一致、时间处于容差内，结果为 `MATCHED`，匹配方式为 `TOLERANCE`。
+  - 外部流水号一致但方向、金额或时间窗口不满足，结果为 `SUSPICIOUS`，保存稳定原因码，不再用弱规则改配其他交易。
+  - 没有同流水号候选时，再按“同账户 + 同方向 + 同金额 + 时间窗口”寻找候选：唯一候选为 `MATCHED/TOLERANCE`，没有候选为 `UNMATCHED`，多个候选为 `DUPLICATE`。
+  - 为保证一对一匹配，先处理并保留外部流水号一致的候选，再处理弱匹配；同一 `MANUAL` 被多个外部交易竞争时，冲突项为 `DUPLICATE`。输入和候选均使用稳定 ID 顺序，重复运行不得因遍历顺序变化结果。
+
+- **范围边界**：
+  - 本日实现 `POST /api/reconciliation-jobs`、`GET /api/reconciliation-jobs/{id}` 和 `GET /api/reconciliation-jobs/{id}/results`；触发仅 ADMIN，查询允许 ADMIN 和 REVIEWER。
+  - 只接受状态为 `SUCCESS` 或 `PARTIAL_SUCCESS` 且至少有一条成功交易的导入任务；文件失败、全部行失败、仍在处理或不存在的任务不能开始对账。
+  - 一个导入任务只对应一个对账任务；重复或并发触发返回原任务，不重复写结果。对账任务状态只允许 `PENDING → PROCESSING → COMPLETED/FAILED`。
+  - 本日使用同步执行，不在 CSV 上传事务内自动启动，不引入 RabbitMQ、Publisher Confirm、ACK、重试、死信或消费者幂等；这些留给 Week 4。
+  - 本日不修改、删除或补写原始 `transactions`，不实现风险策略、人工确认/忽略、审核状态机、乐观锁、审计日志、Redis 或统计缓存。
+
+- **关键设计决定**：
+  - 新增 V6，而不是修改已经应用的 V1～V5。V6 建立 `reconciliation_jobs` 和 `reconciliation_results`，并通过外键保留导入任务、外部交易、候选内部交易和创建人的追踪关系。
+  - `reconciliation_jobs` 至少保存导入任务 ID、状态、总数、四类结果计数、创建人、失败摘要和开始/结束时间；`import_job_id` 唯一约束作为并发幂等最终兜底。
+  - `reconciliation_results` 一条外部交易只保存一个最终结果，至少包含对账任务 ID、外部交易 ID、可空内部交易 ID、结果类型、匹配方式、稳定原因码和创建时间；唯一键保证同一任务不会重复产生同一外部交易结果。
+  - 汇总必须满足 `totalCount = matchedCount + unmatchedCount + duplicateCount + suspiciousCount`，且与当前任务的结果行数一致；业务分类不是系统异常，任务仍进入 `COMPLETED`。
+  - 任务创建、进入 `PROCESSING`、结果写入与完成、系统失败恢复使用清晰的 Spring 事务边界。未预期异常必须回滚本次全部结果和统计，再由独立事务把仍在 `PROCESSING` 的任务标记为 `FAILED`。
+  - 候选读取必须按账户和时间范围分批完成，禁止每条 CSV 交易单独查询数据库形成 N+1；在新增索引前先用真实 SQL 与 `EXPLAIN` 验证现有唯一键和 `idx_transactions_account_time` 是否足够。
+  - 结果分页固定按 `csv_transaction_id ASC, id ASC`，可选 `resultType` 精确筛选；默认 `page=1,size=20`，最大 `size=100`。
+
+- **执行顺序**：
+  1. 新增 Day 6 设计文档，锁定四类结果、匹配优先级、一对一冲突、原因码、状态机、接口和事务时序。
+  2. 设计 V6 表、约束和查询路径，先用真实 MySQL SQL/`EXPLAIN` 评审是否需要索引，再写迁移和数据库基线断言。
+  3. 建立 `reconciliation` 模块的枚举、实体、Mapper、DTO/VO 和纯规则判定组件，先用单元测试覆盖全部分类与边界。
+  4. 实现候选批量加载、两阶段稳定匹配、任务幂等、结果批量写入、汇总统计和系统失败恢复。
+  5. 实现触发、任务详情、结果筛选分页、统一错误映射和精确 RBAC 路由。
+  6. 运行聚焦单元/Controller 测试、真实 MySQL 集成测试、并发幂等与故障注入测试。
+  7. 执行完整回归、真实 JWT + HTTP + MySQL 验收、数据清理、端口清理、范围审计和 `git diff --check`。
+
+- **任务**：
+  - [x] 新增 `docs/design/week3-day6-sync-reconciliation-design.md`，给出规则决策表、两阶段匹配伪代码、状态图、接口模型、事务时序和失败矩阵。
+  - [x] 新增 `V6__create_reconciliation_tables.sql`；保持 V1～V5 不变，并同步更新最新 Flyway 版本、业务表数量、约束和清理顺序断言。
+  - [x] 建立 `reconciliation` 模块的任务/结果状态、匹配方式、原因码、实体和 Mapper。
+  - [x] 实现导入任务前置条件校验、按 `importJobId` 的应用层预查和数据库唯一键并发兜底。
+  - [x] 实现批量候选查询和稳定两阶段匹配，覆盖精确匹配、容差匹配、无候选、同流水号字段冲突、多候选和同一内部交易竞争。
+  - [x] 实现结果分批写入、四类统计、`COMPLETED` 提交和未预期异常的整体回滚/独立 `FAILED` 恢复。
+  - [x] 实现触发响应、任务详情和按结果类型筛选的稳定分页；首次触发返回 `201 + Location`，重复触发返回 `200`。
+  - [x] 更新 Security 路由和统一错误处理：ADMIN 可触发，ADMIN/REVIEWER 可查询，非法导入状态为 `409`，不存在为 `404`，匿名为 `401`，REVIEWER 触发为 `403`。
+  - [x] 单元测试覆盖 3 天边界、金额精确比较、流水号大小写、软删除排除、规则优先级、一对一分配、稳定顺序和统计守恒。
+  - [x] MySQL 集成测试覆盖 V6 约束、空结果拒绝、四类结果共存、批量查询无 N+1、串行/并发重复触发、结果分页和系统故障回滚。
+  - [x] 使用真实 ADMIN/REVIEWER JWT 完成同步触发、详情、筛选分页和权限验收，并用 SQL 核对任务、结果、关联交易与统计。
+
+- **关键文件**：
+  - `docs/design/week3-day6-sync-reconciliation-design.md`
+  - `src/main/resources/db/migration/V6__create_reconciliation_tables.sql`
+  - `src/main/java/com/finguard/core/reconciliation/model/`
+  - `src/main/java/com/finguard/core/reconciliation/entity/`
+  - `src/main/java/com/finguard/core/reconciliation/mapper/`
+  - `src/main/java/com/finguard/core/reconciliation/service/`
+  - `src/main/java/com/finguard/core/reconciliation/controller/`
+  - `src/main/java/com/finguard/core/reconciliation/dto/`
+  - `src/main/java/com/finguard/core/reconciliation/vo/`
+  - `src/main/java/com/finguard/core/transaction/mapper/TransactionMapper.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/java/com/finguard/core/common/exception/`
+  - `src/test/java/com/finguard/core/reconciliation/`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+
+- **验收**：
+  - [x] MySQL 为 `healthy`；数据库已从 V5 迁移到 V6，V1～V5 校验和不变，真实约束与 `EXPLAIN` 结果已记录。
+  - [x] 同一组数据稳定产生 `MATCHED / UNMATCHED / DUPLICATE / SUSPICIOUS`，每条外部交易只有一个结果，统计守恒且关联可追踪。
+  - [x] 3 天边界、精确/容差优先级、同流水号冲突、多候选和内部交易竞争均符合规则决策表。
+  - [x] 同一导入任务串行或并发触发只产生一个对账任务和一组结果；重复请求不重新执行或增加结果。
+  - [x] 故障注入证明结果和完成统计整体回滚，任务最终安全进入 `FAILED`，不存在半套结果或错误完成状态。
+  - [x] ADMIN/REVIEWER/匿名权限矩阵、详情和结果筛选分页通过；拒绝请求无数据库副作用。
+  - [x] Day 6 新增对账测试 15/15、完整 `mvn clean test` 230/230，均无失败、错误或跳过。
+  - [x] 真实 ADMIN/REVIEWER JWT + HTTP + MySQL 得到 `COMPLETED|5|2|1|1|1|RESULTS:5`；首次/重复触发、权限矩阵、验收数据和监听端口清理通过。
+  - [x] `git diff --check` 通过；范围中没有 MQ、Redis、风险、审核或审计实现。
+
+- **学习重点**：
+  - 必须掌握：可解释规则建模、`BigDecimal` 比较、时间窗口、稳定排序、一对一匹配、数据库约束、批量查询、幂等和事务失败恢复。
+  - 边做边学：两阶段匹配、候选冲突、规则决策表、N+1 检查、`EXPLAIN`、结果分页和并发唯一键兜底。
+  - 暂不展开：复杂模糊匹配、机器学习、RabbitMQ 可靠消息、Redis、风险规则、人工审核和审计追踪。
+
+- **回滚**：代码和路由可按 Day 6 文件范围回退；V6 一旦在共享数据库执行不得修改或删除，若必须撤销只能新增补偿迁移。回滚不得修改 Day 5 已持久化的导入任务和交易。
+- **验收结论**：真实同步触发返回 `201/COMPLETED`，相同导入任务再次触发返回同一任务的 `200`；四类统计为 `2/1/1/1` 且 5 条结果关联正确。REVIEWER 查询为 `200`、触发为 `403`，MySQL 统计一致，验收用户、账户、交易、导入任务、对账任务、结果和 8080 端口均已清理。
+- **提交**：`feat: implement synchronous reconciliation`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -596,3 +699,4 @@
 | Week 3 Day 2 导入持久层 | `8c24cb1` |
 | Week 3 Day 3 CSV 解析 | `471a36d` |
 | Week 3 Day 4 行校验 | `2b52b6a` |
+| Week 3 Day 5 同步导入 | `ce5e020` |

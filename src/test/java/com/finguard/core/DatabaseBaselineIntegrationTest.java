@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("5");
+        assertThat(current.getVersion().getVersion()).isEqualTo("6");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?, ?, ?, ?, ?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -75,10 +75,12 @@ class DatabaseBaselineIntegrationTest {
             statement.setString(5, "user_roles");
             statement.setString(6, "import_jobs");
             statement.setString(7, "import_row_errors");
+            statement.setString(8, "reconciliation_jobs");
+            statement.setString(9, "reconciliation_results");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(7);
+                assertThat(resultSet.getInt(1)).isEqualTo(9);
             }
         }
     }
@@ -142,6 +144,65 @@ class DatabaseBaselineIntegrationTest {
                 """,
                 Integer.class
         )).isEqualTo(1);
+    }
+
+    @Test
+    void reconciliationSchemaShouldEnforceTraceabilityAndIdempotency() {
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+                new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'reconciliation_jobs'
+                  AND index_name =
+                      'uk_reconciliation_jobs_import_job'
+                  AND non_unique = 0
+                """,
+                Integer.class
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'reconciliation_results'
+                  AND index_name =
+                      'uk_reconciliation_results_job_csv'
+                  AND non_unique = 0
+                """,
+                Integer.class
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name IN (
+                      'reconciliation_jobs',
+                      'reconciliation_results'
+                  )
+                  AND delete_rule = 'RESTRICT'
+                """,
+                Integer.class
+        )).isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND constraint_type = 'CHECK'
+                  AND constraint_name IN (
+                      'chk_reconciliation_jobs_completed_counts',
+                      'chk_reconciliation_jobs_error',
+                      'chk_reconciliation_jobs_times',
+                      'chk_reconciliation_results_shape'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(4);
     }
 
     private void assertIndexColumn(

@@ -8,6 +8,8 @@ import com.finguard.core.auth.exception.InvalidCredentialsException;
 import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.importjob.exception.InvalidImportFileRequestException;
 import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
+import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
+import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
 import com.finguard.core.transaction.exception.InvalidTransactionInputException;
 import com.finguard.core.transaction.exception.InvalidTransactionOperationException;
@@ -85,6 +87,34 @@ public class GlobalExceptionHandler {
         return error(
                 HttpStatus.NOT_FOUND,
                 ErrorCode.IMPORT_JOB_NOT_FOUND,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(ReconciliationJobNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleReconciliationJobNotFound(
+            ReconciliationJobNotFoundException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                ErrorCode.RECONCILIATION_JOB_NOT_FOUND,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(InvalidReconciliationOperationException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleInvalidReconciliationOperation(
+            InvalidReconciliationOperationException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.CONFLICT,
+                ErrorCode.INVALID_RECONCILIATION_OPERATION,
                 exception.getMessage(),
                 request,
                 List.of()
