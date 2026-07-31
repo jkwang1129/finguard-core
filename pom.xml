@@ -19,6 +19,7 @@
 
     <properties>
         <java.version>17</java.version>
+        <commons-csv.version>1.14.1</commons-csv.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
     </properties>
 
@@ -48,6 +49,11 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
             <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>${commons-csv.version}</version>
         </dependency>
 
         <dependency>
