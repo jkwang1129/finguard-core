@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 2 Day 5 已完成：在 Week 1 的账户、人工交易、分页和统一错误处理基础上，已经完成认证持久层、用户名密码登录、JWT 签发与校验、无状态 Security Filter Chain，以及账户和交易接口的 RBAC。
+当前进度为 Week 2 Day 7 已完成：在 Week 1 的账户、人工交易、分页和统一错误处理基础上，已经完成认证持久层、用户名密码登录、JWT 签发与校验、无状态 Security Filter Chain、账户和交易接口的 RBAC、事务边界验证，以及基于真实 `EXPLAIN` 的交易分页索引优化。下一里程碑是 Week 3 Day 1——CSV 导入需求与契约设计。
 
 ## 当前技术基线
 
@@ -39,7 +39,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - `ADMIN` 可读写账户和交易，`REVIEWER` 只读；
 - 统一的 `401` 认证失败和 `403` 权限不足响应；
 - 统一错误响应以及 `400`、`404`、`409`、`500` 状态映射；
-- 155 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、分页、认证和 RBAC 验收。
+- Service 层读写事务边界和多表异常回滚验证；
+- 基于真实 `EXPLAIN` 新增默认交易分页索引；
+- 157 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、分页、认证、RBAC、事务和索引验收。
 
 ## 本地运行
 
@@ -63,6 +65,16 @@ Copy-Item .env.example .env
 ```
 
 然后在 `.env` 中设置仅供本机使用的 MySQL 密码。`.env` 已被 Git 忽略，不要提交真实密码。
+
+应用启动还需要一个 Base64 编码、解码后不少于 32 字节的 JWT 密钥。可以只在当前 PowerShell 会话中生成：
+
+```powershell
+$jwtKeyBytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($jwtKeyBytes)
+$env:JWT_SECRET_BASE64 = [Convert]::ToBase64String($jwtKeyBytes)
+```
+
+不要把真实 JWT 密钥写入仓库、文档或命令输出。
 
 ### 3. 启动 MySQL
 
@@ -151,8 +163,8 @@ DELETE /api/transactions/{transactionId}
 
 ## 当前限制
 
-- 尚未完成 Week 2 的事务边界、索引和 `EXPLAIN` 分析；
-- 尚未实现 CSV 导入、自动对账、审核和审计；
+- 尚未实现 CSV 上传、逐行校验、SHA-256 文件去重和导入任务；
+- 尚未实现自动对账、风险识别、异常审核和审计；
 - 尚未引入 Redis 和 RabbitMQ。
 
 ## 当前范围
