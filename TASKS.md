@@ -22,8 +22,9 @@
 | Week 3 Day 1 | 已完成 | CSV 文件、字段、幂等、失败、状态和测试契约已锁定 |
 | Week 3 Day 2 | 已完成 | 导入任务与行错误的数据模型、V4 迁移、Mapper 和真实数据库验收完成 |
 | Week 3 Day 3 | 已完成 | 原始文件校验、SHA-256 指纹、CSV 结构解析和边界测试完成 |
-| Week 3 Day 4 | 下一步 | 实现逐字段规范化、业务校验、账户查询和重复交易判断 |
-| Week 3 Day 5～Day 7 | 待规划 | 同步编排与批量入库、自动对账和周验收 |
+| Week 3 Day 4 | 已完成 | 逐行规范化、批量账户解析、文件内/数据库重复判断和真实 MySQL 验收完成 |
+| Week 3 Day 5 | 下一步 | 同步上传编排、文件哈希幂等、任务状态流转、交易/行错误入库 |
+| Week 3 Day 6～Day 7 | 待规划 | 同步版自动对账和 Week 3 综合验收 |
 | Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
@@ -385,6 +386,81 @@
   - [x] 变更中没有 Controller、V5 迁移、任务状态 Service、账户/交易 Mapper 调用、数据库写入、RabbitMQ、Redis 或对账实现。
 - **验收结论**：Apache Commons CSV 1.14.1 依赖解析正确；合法与失败边界、5 MiB 文件上限和 10,000 行上限均由自动化测试覆盖。
 - **提交**：`feat: add CSV file parsing foundation`
+
+### Week 3 Day 4：CSV 逐行规范化与业务校验
+
+- **状态**：已完成
+- **业务目标**：把 Day 3 产生的原始 `ParsedCsvRow` 转换为“可供后续入库的规范化交易候选 + 可持久化的稳定行错误”，并在不写数据库的前提下完成账户解析、文件内重复和数据库重复判断。
+- **请求流**：
+
+  ```text
+  ParsedImportFile
+    → 校验每条记录恰好六列
+    → 修剪、规范化并校验六个字段
+    → 批量查询账户并解析 accountId
+    → 按 CSV 逻辑记录顺序识别文件内重复
+    → 分批查询数据库中已有的 CSV_IMPORT 业务键
+    → 输出合法交易候选和行错误
+  ```
+
+- **范围边界**：
+  - 本日只读取账户和现有交易，不创建或更新 `import_jobs`、`import_row_errors`、`transactions`。
+  - 本日不开放上传或查询 Controller，不处理 multipart、HTTP 状态、JWT 当前用户或权限规则。
+  - 本日不负责 `PENDING → PROCESSING → 终态`、统计汇总、事务编排、批量插入、数据库唯一键冲突兜底和系统失败恢复；这些留给 Day 5。
+  - 不重新读取原始文件、不重新计算 SHA-256，也不重新解释 UTF-8、BOM、换行、CSV 引号或逻辑记录边界。
+  - 不新增 RabbitMQ、Redis、自动对账、风险、审核或审计功能；没有真实 SQL 证据时不新增 V5 或索引。
+- **关键设计决定**：
+  - 列数不是六列时只生成 `COLUMN_COUNT_MISMATCH`，不再按下标读取字段；空白记录也按该规则处理。
+  - 字段按 `account_no → external_transaction_no → direction → amount → transaction_time → description` 的固定顺序处理；同一记录可收集多个互不依赖的字段错误，但失败记录只计一次。
+  - 账户号使用 `trim + Locale.ROOT 大写`；流水号只 `trim` 且保持大小写；方向使用 `trim + Locale.ROOT 大写`；描述 `trim` 后空串转 `null`。
+  - 金额只接受 Day 1 锁定的十进制文本格式，转换为两位小数时禁止舍入；时间使用严格 `uuuu-MM-dd HH:mm:ss` 和注入的 `Clock` 校验“不得超过业务时间未来五分钟”。
+  - 账户号格式合法后才查询账户；不存在或已软删除映射为 `ACCOUNT_NOT_FOUND`，存在但为 `DISABLED` 映射为 `ACCOUNT_NOT_ACTIVE`。
+  - 只有本地字段全部合法且账户为 `ACTIVE` 的记录才能形成业务键 `(accountId, CSV_IMPORT, externalTransactionNo)`；无效记录不占用文件内“第一条有效记录”的位置。
+  - 文件内重复按 CSV 逻辑记录号稳定判定：第一个有效业务键保留，后续相同键记为 `DUPLICATE_TRANSACTION_IN_FILE`；再检查第一个键是否已存在于数据库并映射为 `DUPLICATE_TRANSACTION`。
+  - 数据库重复检查必须包含已软删除的 `CSV_IMPORT` 交易，同时不能把相同键的 `MANUAL` 交易误判为重复；流水号比较保持大小写敏感。
+  - 最多 10,000 行的账户和交易查询采用去重、分批读取，禁止每行各执行一次查询形成 N+1；数据库唯一约束仍由 Day 5 写入阶段承担并发兜底。
+  - 行错误结果携带逻辑记录号、固定字段名、`ImportRowErrorCode`、安全消息和最多 255 字符的拒绝值；不保存整行原文、SQL、路径、堆栈或第三方异常。
+- **执行顺序**：
+  1. 评审 Day 1 字段/错误契约和 Day 3 交接对象，产出 Day 4 设计文档与结果模型。
+  2. 先实现不访问数据库的字段规范化和本地校验，并用固定 `Clock` 完成边界单元测试。
+  3. 扩展账户与交易只读 Mapper，按去重后的键分批查询，并用真实 MySQL 验证软删除、来源和大小写语义。
+  4. 组合批量账户解析、文件内重复和数据库重复判断，形成顺序稳定、不可变的文件校验结果。
+  5. 运行聚焦测试、完整回归、真实 SQL/副作用检查、健康检查和范围审计。
+- **任务**：
+  - [x] 新增 Day 4 设计文档，锁定组件职责、错误优先级、结果对象、批量查询策略以及 Day 5 交接边界。
+  - [x] 定义不可变的规范化交易候选、行错误和值校验结果；合法候选固定携带 `TransactionSource.CSV_IMPORT`。
+  - [x] 实现六列数量校验，以及账户号、流水号、方向、金额、交易时间和描述的规范化与本地校验。
+  - [x] 复用现有账户/交易业务规则；人工 CRUD 的现有行为和测试保持不变，没有引入相互矛盾的第二套业务语义。
+  - [x] 实现账户批量解析，区分 `ACCOUNT_NOT_FOUND` 与 `ACCOUNT_NOT_ACTIVE`。
+  - [x] 实现文件内重复判断，保证只有第一个本地合法且账户有效的业务键可以继续。
+  - [x] 实现数据库已有 CSV 业务键的分批只读查询，包含软删除交易并保持流水号大小写敏感。
+  - [x] 按稳定字段顺序生成安全的行错误；拒绝值超过存储上限时截断并明确标记，同一记录多个错误不重复计算失败行。
+  - [x] 单元测试覆盖全部字段的合法值、边界值、非法值、规范化结果、固定时间边界、多个错误和列数错误。
+  - [x] MySQL 集成测试覆盖 ACTIVE/DISABLED/不存在/软删除账户，文件内重复，已有/软删除 CSV 重复，MANUAL 非重复和流水号大小写差异。
+  - [x] 验证批量查询在大批量输入下不会退化为逐行 N+1，结果顺序与 CSV 逻辑记录号一致且不可修改。
+- **关键文件**：
+  - `docs/design/week3-day4-import-row-validation-design.md`
+  - `src/main/java/com/finguard/core/importjob/validation/`
+  - `src/main/java/com/finguard/core/account/mapper/AccountMapper.java`
+  - `src/main/java/com/finguard/core/transaction/mapper/TransactionMapper.java`
+  - `src/test/java/com/finguard/core/importjob/validation/`
+- **验收**：
+  - [x] 合法样例得到规范化账户 ID、流水号、方向、两位小数金额、毫秒为零的交易时间、可空描述和固定 `CSV_IMPORT` 来源。
+  - [x] Day 1 定义的 11 种 `ImportRowErrorCode` 均有自动化测试，错误字段、逻辑记录号、拒绝值和安全消息稳定。
+  - [x] 已删除账户按不存在处理；已删除 CSV 交易仍判重复；MANUAL 同业务键不误判；`EXT-001` 与 `ext-001` 保持不同。
+  - [x] 较早的无效记录不抢占文件内重复键；同一记录即使产生多个错误也只进入失败记录集合一次。
+  - [x] 账户和交易查重为去重后的 500 条分批查询，不存在按 CSV 行数增长的 N+1 查询。
+  - [x] 校验过程对 `accounts`、`transactions`、`import_jobs` 和 `import_row_errors` 均无写入副作用。
+  - [x] MySQL 为 `healthy`；Day 4 聚焦测试 21/21、`mvn clean test` 199/199 通过且无跳过。
+  - [x] 应用健康检查为 `UP`，端口 8080 已释放，测试数据与临时文件已清理，`git diff --check` 通过。
+  - [x] 变更中没有 Controller、任务状态流转、交易/行错误入库、V5、RabbitMQ、Redis 或自动对账实现。
+- **学习重点**：
+  - 现在掌握：纯校验与数据库查询分层、`BigDecimal` 精度、严格时间解析、`Clock` 可测试性、不可变结果、错误聚合、批量查询与 N+1。
+  - Day 5 再学：multipart 上传、任务状态机、事务边界、批量插入、唯一键并发兜底和失败恢复。
+  - 暂不展开：RabbitMQ 可靠消息、Redis、自动对账和审核流程。
+- **回滚**：若 Day 4 需要回滚，只删除新增校验组件和只读查询方法；不涉及数据库迁移或已有数据恢复，Day 3 的解析结果仍可独立使用。
+- **验收结论**：真实 MySQL `EXPLAIN` 分别使用 `uk_accounts_account_no` 和 `uk_transactions_account_source_external_no`；软删除、来源、大小写、500+1 分批查询和零写入副作用均由自动化测试覆盖。
+- **提交**：`feat: validate CSV import rows`
 
 ## 7. 后续路线
 

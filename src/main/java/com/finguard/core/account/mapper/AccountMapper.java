@@ -8,6 +8,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.util.List;
+
 @Mapper
 public interface AccountMapper extends BaseMapper<Account> {
 
@@ -16,6 +18,28 @@ public interface AccountMapper extends BaseMapper<Account> {
 
     @Select("SELECT COUNT(*) FROM transactions WHERE account_id = #{accountId}")
     long countAllTransactionsByAccountId(@Param("accountId") Long accountId);
+
+    @Select("""
+            <script>
+            SELECT id,
+                   account_no AS accountNo,
+                   status,
+                   deleted
+            FROM accounts
+            WHERE deleted = 0
+              AND account_no IN
+              <foreach collection="accountNos"
+                       item="accountNo"
+                       open="("
+                       separator=","
+                       close=")">
+                #{accountNo}
+              </foreach>
+            </script>
+            """)
+    List<Account> selectActiveOrDisabledByAccountNos(
+            @Param("accountNos") List<String> accountNos
+    );
 
     @Update("""
             UPDATE accounts

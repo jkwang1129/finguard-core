@@ -3,6 +3,7 @@ package com.finguard.core.transaction.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.model.TransactionDirection;
+import com.finguard.core.transaction.model.TransactionBusinessKey;
 import com.finguard.core.transaction.model.TransactionSource;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -11,6 +12,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface TransactionMapper extends BaseMapper<Transaction> {
@@ -26,6 +28,29 @@ public interface TransactionMapper extends BaseMapper<Transaction> {
             @Param("accountId") Long accountId,
             @Param("source") TransactionSource source,
             @Param("externalTransactionNo") String externalTransactionNo
+    );
+
+    @Select("""
+            <script>
+            SELECT account_id AS accountId,
+                   external_transaction_no AS externalTransactionNo
+            FROM transactions
+            WHERE source = #{source}
+              AND (account_id, external_transaction_no) IN
+              <foreach collection="businessKeys"
+                       item="businessKey"
+                       open="("
+                       separator=","
+                       close=")">
+                (#{businessKey.accountId},
+                 #{businessKey.externalTransactionNo})
+              </foreach>
+            </script>
+            """)
+    List<TransactionBusinessKey> selectExistingBusinessKeysIncludingDeleted(
+            @Param("source") TransactionSource source,
+            @Param("businessKeys")
+            List<TransactionBusinessKey> businessKeys
     );
 
     @Select("""
