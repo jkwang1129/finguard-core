@@ -25,7 +25,7 @@
 | Week 3 Day 4 | 已完成 | 逐行规范化、批量账户解析、文件内/数据库重复判断和真实 MySQL 验收完成 |
 | Week 3 Day 5 | 已完成 | 同步上传、文件哈希幂等、状态流转、批量持久化、失败恢复和权限验收完成 |
 | Week 3 Day 6 | 已完成 | 同步自动对账、四类结果、幂等、批处理、失败恢复和权限验收完成 |
-| Week 3 Day 7 | 下一步 | Week 3 综合验收 |
+| Week 3 Day 7 | 已完成 | Week 3 综合验收、真实 MySQL/JWT/HTTP 验收、清理和周复盘完成 |
 | Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
@@ -664,6 +664,36 @@
 - **验收结论**：真实同步触发返回 `201/COMPLETED`，相同导入任务再次触发返回同一任务的 `200`；四类统计为 `2/1/1/1` 且 5 条结果关联正确。REVIEWER 查询为 `200`、触发为 `403`，MySQL 统计一致，验收用户、账户、交易、导入任务、对账任务、结果和 8080 端口均已清理。
 - **提交**：`feat: implement synchronous reconciliation`
 
+### Week 3 Day 7：综合验收与周复盘
+
+- **状态**：已完成
+- **目标**：在干净的真实 MySQL 环境中验证 Week 3 从 CSV 上传到自动对账查询的完整闭环，确认权限、幂等、失败恢复、数据一致性和范围边界，并形成可复核的周复盘。
+- **范围边界**：只做 Week 3 已实现能力的综合验收、文档复盘、测试与环境清理；不新增 RabbitMQ、Redis、风险规则、人工审核、审计日志或前端。
+- **执行顺序**：
+  1. 补充本日验收清单与周复盘文档，核对 Day 1 契约和 Day 2–6 实际交付。
+  2. 执行导入、对账、认证和持久层聚焦测试，随后执行完整 `mvn clean test`。
+  3. 重建项目专属 MySQL 数据卷，确认 V1→V6 迁移、业务表、约束和索引状态。
+  4. 使用真实 ADMIN/REVIEWER JWT 完成上传、任务详情、错误分页、对账触发、结果筛选、重复请求和权限矩阵验收。
+  5. 注入一次导入/对账失败恢复场景，使用 SQL 核对任务状态、交易数、结果数和统计守恒。
+  6. 清理验收数据、停止应用、释放 8080 端口，执行范围审计、`git diff --check` 和最终 Git 提交。
+- **任务**：
+  - [x] 新增 `docs/review/week3-review.md`，记录功能闭环、测试结果、真实 HTTP/MySQL 证据、失败恢复、限制和 Week 4 边界。
+  - [x] 更新本节状态、任务、验收结论和 Git 里程碑索引，所有勾选项均有命令或测试证据。
+  - [x] 聚焦测试 34/34 和完整 `mvn clean test` 230/230 通过，零失败、零错误、零跳过。
+  - [x] 干净数据卷完成 V1→V6 迁移，真实数据库约束、外键、唯一键、索引和统计守恒通过。
+  - [x] 真实 ADMIN/REVIEWER JWT + HTTP 覆盖 CSV 导入成功、重复文件、任务/错误查询、对账结果、重复触发和权限矩阵。
+  - [x] 导入与对账失败恢复后不存在半套交易/结果或错误完成状态，验收数据全部清理，8080 端口释放。
+  - [x] 范围审计确认没有提前实现 Week 4–6 能力；`git diff --check` 通过。
+- **关键文件**：
+  - `TASKS.md`
+  - `docs/review/week3-review.md`
+  - `src/test/java/com/finguard/core/importjob/`
+  - `src/test/java/com/finguard/core/reconciliation/`
+  - `src/test/java/com/finguard/core/auth/`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+- **验收**：聚焦测试 34/34、完整 `mvn clean test` 230/230；真实 HTTP 覆盖 `201/200/403/404` 矩阵；干净卷 V1→V6、统计守恒、失败恢复、数据清理和端口释放均通过，详见 `docs/review/week3-review.md`。
+- **提交**：`docs: complete week 3 acceptance review`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -700,3 +730,5 @@
 | Week 3 Day 3 CSV 解析 | `471a36d` |
 | Week 3 Day 4 行校验 | `2b52b6a` |
 | Week 3 Day 5 同步导入 | `ce5e020` |
+| Week 3 Day 6 同步对账 | `20626dd` |
+| Week 3 Day 7 综合验收 | 待提交 |
