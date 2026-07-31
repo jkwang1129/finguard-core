@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("3");
+        assertThat(current.getVersion().getVersion()).isEqualTo("4");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?, ?, ?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -73,10 +73,12 @@ class DatabaseBaselineIntegrationTest {
             statement.setString(3, "users");
             statement.setString(4, "roles");
             statement.setString(5, "user_roles");
+            statement.setString(6, "import_jobs");
+            statement.setString(7, "import_row_errors");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(5);
+                assertThat(resultSet.getInt(1)).isEqualTo(7);
             }
         }
     }

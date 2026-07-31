@@ -20,8 +20,9 @@
 | Week 1 | 已完成 | 账户、人工交易、分页、统一错误处理和周验收完成 |
 | Week 2 | 已完成 | 登录、JWT、RBAC、事务、索引和综合验收完成 |
 | Week 3 Day 1 | 已完成 | CSV 文件、字段、幂等、失败、状态和测试契约已锁定 |
-| Week 3 Day 2 | 下一步 | 导入任务与行错误的数据模型、迁移和持久层 |
-| Week 3 Day 3～Day 7 | 待规划 | 同步上传解析、逐行校验、批量入库、同步版自动对账和周验收 |
+| Week 3 Day 2 | 已完成 | 导入任务与行错误的数据模型、V4 迁移、Mapper 和真实数据库验收完成 |
+| Week 3 Day 3 | 下一步 | 进入当天时根据 Day 1～Day 2 契约锁定同步导入的第一段实现边界 |
+| Week 3 Day 4～Day 7 | 待规划 | 逐行校验、批量入库、同步版自动对账和周验收 |
 | Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
@@ -296,16 +297,50 @@
 
 ### Week 3 Day 2：导入任务数据模型与持久层
 
-- **状态**：下一步
-- **目标**：根据 Day 1 契约建立导入任务、行错误和文件哈希唯一约束，不提前实现文件上传和 CSV 解析。
+- **状态**：已完成
+- **业务目标**：给每次被系统接受的 CSV 建立可追踪的任务账本，并把可分页定位的行错误持久化，为后续同步上传、解析和交易入库提供可靠落点。
+- **范围边界**：只完成数据库模型、Java 持久层和真实 MySQL 集成测试；不实现上传接口、SHA-256 计算、CSV 解析、交易入库、状态流转 Service、RabbitMQ、Redis 或自动对账。
+- **执行顺序**：
+  1. 先评审字段、状态、错误码、关系和查询路径，产出 Day 2 数据模型设计。
+  2. 新增 V4 Flyway 迁移，用数据库约束兜住文件哈希幂等和数据合法性。
+  3. 建立 `importjob` 模块的枚举、实体和 Mapper。
+  4. 用 Mapper 集成测试验证写入、查询、唯一约束、外键和稳定分页。
+  5. 执行空库迁移、完整测试、真实 SQL 检查和范围审计。
 - **任务**：
-  - [ ] 评审 `import_jobs`、`import_row_errors` 字段、关系、约束和索引。
-  - [ ] 新增 Flyway 迁移，建立两张导入表和文件哈希唯一约束。
-  - [ ] 建立导入任务、行错误、状态和错误码模型以及 Mapper。
-  - [ ] 验证空库 V1→最新迁移、约束、状态持久化和错误分页查询。
-- **关键文件**：进入 Day 2 时按统一模板锁定。
-- **验收**：进入 Day 2 时根据 Day 1 契约细化。
-- **提交**：进入 Day 2 时确定。
+  - [x] 设计 `import_jobs`：包含原文件名、64 位小写 SHA-256、文件大小、状态、四项行数统计、文件错误、错误摘要、创建人和处理时间。
+  - [x] 设计 `import_row_errors`：包含任务 ID、CSV 逻辑记录号、字段名、稳定错误码、截断后的拒绝值、安全消息和创建时间。
+  - [x] 明确 `users → import_jobs → import_row_errors` 的一对多关系；两个外键均使用 `ON DELETE RESTRICT`，避免删除任务追踪证据。
+  - [x] 明确数据库约束：文件哈希唯一且格式合法、文件大小为 1～5 MiB、状态/错误码属于允许集合、统计均非负、`duplicate_rows <= failed_rows`。
+  - [x] 为 `import_row_errors` 建立 `(import_job_id, csv_row_number, id)` 联合索引，映射业务字段 `rowNumber` 并支持稳定分页；不使用 MySQL 关键字 `row_number`，也不添加没有查询依据的索引。
+  - [x] 新增 `V4__create_import_job_tables.sql`；保持 V1～V3 不变，并同步更新所有“最新 Flyway 版本”和业务表数量断言。
+  - [x] 新增 `ImportJobStatus`、`ImportFileErrorCode`、`ImportRowErrorCode`，与 Day 1 契约中的状态和错误码逐项一致。
+  - [x] 新增 `ImportJob`、`ImportRowError` 实体及 `ImportJobMapper`、`ImportRowErrorMapper`。
+  - [x] Mapper 支持按 ID 查询任务、按文件哈希查找原任务，以及按任务 ID 稳定分页查询行错误；Day 2 不加入 Controller 或 Service。
+  - [x] 新增独立的导入持久层测试夹具，按“行错误 → 导入任务 → 用户”的顺序清理测试数据，不修改 Flyway 固定角色。
+  - [x] 集成测试覆盖任务/错误往返持久化、五种状态、文件级/行级错误码、唯一哈希冲突、非法值、未知外键、删除限制和多页稳定排序。
+- **关键文件**：
+  - `docs/design/week3-day2-import-persistence-design.md`
+  - `src/main/resources/db/migration/V4__create_import_job_tables.sql`
+  - `src/main/java/com/finguard/core/importjob/model/ImportJobStatus.java`
+  - `src/main/java/com/finguard/core/importjob/model/ImportFileErrorCode.java`
+  - `src/main/java/com/finguard/core/importjob/model/ImportRowErrorCode.java`
+  - `src/main/java/com/finguard/core/importjob/entity/ImportJob.java`
+  - `src/main/java/com/finguard/core/importjob/entity/ImportRowError.java`
+  - `src/main/java/com/finguard/core/importjob/mapper/ImportJobMapper.java`
+  - `src/main/java/com/finguard/core/importjob/mapper/ImportRowErrorMapper.java`
+  - `src/test/java/com/finguard/core/importjob/ImportJobPersistenceIntegrationTest.java`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+- **验收**：
+  - [x] `docker compose ps` 显示 MySQL 为 `healthy`。
+  - [x] 从空数据卷执行 V1→V4 迁移成功，共存在 7 张当前业务表，V1～V3 校验和不变。
+  - [x] `information_schema` 证明两张新表、文件哈希唯一约束、两个 `RESTRICT` 外键、13 个检查约束和错误分页联合索引真实存在。
+  - [x] 相同文件哈希只能创建一个任务；非法状态、错误码、统计、文件大小和外键数据均被数据库拒绝。
+  - [x] Mapper 能按哈希返回原任务，行错误跨页查询无重复、无遗漏且顺序稳定。
+  - [x] Day 2 聚焦测试 12/12 通过，`mvn clean test` 164/164 通过且无跳过；测试数据清理为 0。
+  - [x] 应用健康检查为 `UP`，端口 8080 已释放，`git diff --check` 通过。
+  - [x] 变更范围中没有上传端点、CSV 解析依赖、交易写入、消息队列、Redis、对账或对 V1～V3 的修改。
+- **验收结论**：真实 MySQL `EXPLAIN` 使用 `idx_import_row_errors_job_row_id`，错误顺序为 `csv_row_number ASC, id ASC`；项目专属数据卷已重建并完成空库验收。
+- **提交**：`feat: add import job persistence layer`
 
 ## 7. 后续路线
 
@@ -338,3 +373,4 @@
 | Week 2 Day 5 RBAC | `573069b` |
 | Week 2 Day 6 事务/索引 | `dbe799d` |
 | Week 2 Day 7 综合验收 | `7febe0d` |
+| Week 3 Day 1 CSV 契约 | `42bf721` |
