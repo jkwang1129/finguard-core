@@ -7,6 +7,11 @@ spring:
     url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3306}/${MYSQL_DATABASE:finguard}?sslMode=DISABLED&allowPublicKeyRetrieval=true&connectionTimeZone=Asia/Shanghai"
     username: "${MYSQL_USER:finguard}"
     password: "${MYSQL_PASSWORD}"
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+      file-size-threshold: 5MB
 
 finguard:
   auth:

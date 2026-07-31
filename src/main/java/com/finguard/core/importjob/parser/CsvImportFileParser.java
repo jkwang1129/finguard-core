@@ -7,6 +7,7 @@ import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -22,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 
+@Component
 public class CsvImportFileParser {
 
     public static final int MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -54,17 +56,38 @@ public class CsvImportFileParser {
     public ParsedImportFile parse(
             String originalFileName,
             byte[] originalBytes) {
+        return parse(prepare(originalFileName, originalBytes));
+    }
+
+    public PreparedImportFile prepare(
+            String originalFileName,
+            byte[] originalBytes) {
         validateRequest(originalFileName, originalBytes);
 
         String fileHash = calculateSha256(originalBytes);
+        return new PreparedImportFile(
+                originalFileName,
+                originalBytes,
+                fileHash,
+                originalBytes.length
+        );
+    }
+
+    public ParsedImportFile parse(PreparedImportFile preparedFile) {
+        if (preparedFile == null) {
+            throw new IllegalArgumentException(
+                    "preparedFile must not be null"
+            );
+        }
+        byte[] originalBytes = preparedFile.originalBytes();
         String decoded = decodeStrictUtf8(originalBytes);
         rejectBareCarriageReturns(decoded);
         List<ParsedCsvRow> rows = parseRecords(decoded);
 
         return new ParsedImportFile(
-                originalFileName,
-                fileHash,
-                originalBytes.length,
+                preparedFile.originalFileName(),
+                preparedFile.fileHash(),
+                preparedFile.fileSizeBytes(),
                 rows
         );
     }
@@ -76,6 +99,12 @@ public class CsvImportFileParser {
             throw requestFailure(
                     ImportFileRequestErrorCode.MISSING_FILE_NAME,
                     "File name is required"
+            );
+        }
+        if (originalFileName.length() > 255) {
+            throw requestFailure(
+                    ImportFileRequestErrorCode.INVALID_FILE_NAME,
+                    "File name must not exceed 255 characters"
             );
         }
         if (!originalFileName.toLowerCase(Locale.ROOT).endsWith(".csv")) {

@@ -4,12 +4,40 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.finguard.core.importjob.entity.ImportRowError;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 @Mapper
 public interface ImportRowErrorMapper extends BaseMapper<ImportRowError> {
+
+    @Insert("""
+            <script>
+            INSERT INTO import_row_errors (
+                import_job_id,
+                csv_row_number,
+                field_name,
+                error_code,
+                rejected_value,
+                message
+            )
+            VALUES
+            <foreach collection="errors" item="error" separator=",">
+                (
+                    #{error.importJobId},
+                    #{error.rowNumber},
+                    #{error.field},
+                    #{error.errorCode},
+                    #{error.rejectedValue},
+                    #{error.message}
+                )
+            </foreach>
+            </script>
+            """)
+    int insertBatch(@Param("errors") List<ImportRowError> errors);
 
     @Select("""
             SELECT id,

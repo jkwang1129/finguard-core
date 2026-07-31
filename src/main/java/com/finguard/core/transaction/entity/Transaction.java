@@ -20,6 +20,9 @@ public class Transaction {
     @TableField("account_id")
     private Long accountId;
 
+    @TableField("import_job_id")
+    private Long importJobId;
+
     @TableField("external_transaction_no")
     private String externalTransactionNo;
 
@@ -57,6 +60,14 @@ public class Transaction {
 
     public void setAccountId(Long accountId) {
         this.accountId = accountId;
+    }
+
+    public Long getImportJobId() {
+        return importJobId;
+    }
+
+    public void setImportJobId(Long importJobId) {
+        this.importJobId = importJobId;
     }
 
     public String getExternalTransactionNo() {

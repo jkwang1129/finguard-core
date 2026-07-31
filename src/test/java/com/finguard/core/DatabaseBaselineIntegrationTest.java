@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("4");
+        assertThat(current.getVersion().getVersion()).isEqualTo("5");
     }
 
     @Test
@@ -104,6 +104,44 @@ class DatabaseBaselineIntegrationTest {
             assertIndexColumn(resultSet, "id", "D");
             assertThat(resultSet.next()).isFalse();
         }
+    }
+
+    @Test
+    void transactionImportJobLinkShouldExist() {
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+                new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'transactions'
+                  AND column_name = 'import_job_id'
+                """,
+                String.class
+        )).isEqualTo("YES");
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT delete_rule
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND constraint_name = 'fk_transactions_import_job'
+                """,
+                String.class
+        )).isEqualTo("RESTRICT");
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name = 'transactions'
+                  AND constraint_name =
+                      'chk_transactions_import_source'
+                  AND constraint_type = 'CHECK'
+                """,
+                Integer.class
+        )).isEqualTo(1);
     }
 
     private void assertIndexColumn(

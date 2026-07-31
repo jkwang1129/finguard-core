@@ -119,6 +119,38 @@ class CsvImportFileParserTest {
     }
 
     @Test
+    void shouldPrepareFingerprintBeforeStructuralParsing() {
+        byte[] malformedCsv = utf8("not,the,required,header\n");
+
+        PreparedImportFile prepared = parser.prepare(
+                "prepared.csv",
+                malformedCsv
+        );
+
+        assertThat(prepared.originalFileName()).isEqualTo("prepared.csv");
+        assertThat(prepared.fileSizeBytes()).isEqualTo(malformedCsv.length);
+        assertThat(prepared.fileHash()).matches("[0-9a-f]{64}");
+        assertFileFailure(
+                () -> parser.parse(prepared),
+                ImportFileErrorCode.INVALID_HEADER
+        );
+    }
+
+    @Test
+    void shouldDefensivelyCopyPreparedFileBytes() {
+        byte[] bytes = utf8(validCsv("\n"));
+        byte firstByte = bytes[0];
+
+        PreparedImportFile prepared = parser.prepare("copy.csv", bytes);
+        bytes[0] = (byte) 'X';
+        byte[] exposed = prepared.originalBytes();
+        exposed[0] = (byte) 'Y';
+
+        assertThat(prepared.originalBytes()[0]).isEqualTo(firstByte);
+        assertThat(parser.parse(prepared).rows()).hasSize(1);
+    }
+
+    @Test
     void shouldPreserveRawFieldTextWithoutBusinessNormalization() {
         String csv = HEADER + "\n"
                 + " BANK-001 , EXT-001 ,income,01.0,"

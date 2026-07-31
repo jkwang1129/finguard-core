@@ -48,7 +48,9 @@ public class SecurityConfiguration {
                                 "/api/accounts",
                                 "/api/accounts/*",
                                 "/api/transactions",
-                                "/api/transactions/*"
+                                "/api/transactions/*",
+                                "/api/import-jobs/*",
+                                "/api/import-jobs/*/errors"
                         ).hasAnyRole(
                                 RoleCode.ADMIN.name(),
                                 RoleCode.REVIEWER.name()
@@ -56,7 +58,8 @@ public class SecurityConfiguration {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/accounts",
-                                "/api/transactions"
+                                "/api/transactions",
+                                "/api/import-jobs"
                         ).hasRole(RoleCode.ADMIN.name())
                         .requestMatchers(
                                 HttpMethod.PATCH,

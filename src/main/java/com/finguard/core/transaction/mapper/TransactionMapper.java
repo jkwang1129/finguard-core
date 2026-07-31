@@ -6,6 +6,7 @@ import com.finguard.core.transaction.model.TransactionDirection;
 import com.finguard.core.transaction.model.TransactionBusinessKey;
 import com.finguard.core.transaction.model.TransactionSource;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -16,6 +17,41 @@ import java.util.List;
 
 @Mapper
 public interface TransactionMapper extends BaseMapper<Transaction> {
+
+    @Insert("""
+            <script>
+            INSERT INTO transactions (
+                account_id,
+                import_job_id,
+                external_transaction_no,
+                direction,
+                amount,
+                transaction_time,
+                description,
+                source,
+                deleted
+            )
+            VALUES
+            <foreach collection="transactions"
+                     item="transaction"
+                     separator=",">
+                (
+                    #{transaction.accountId},
+                    #{transaction.importJobId},
+                    #{transaction.externalTransactionNo},
+                    #{transaction.direction},
+                    #{transaction.amount},
+                    #{transaction.transactionTime},
+                    #{transaction.description},
+                    #{transaction.source},
+                    0
+                )
+            </foreach>
+            </script>
+            """)
+    int insertBatch(
+            @Param("transactions") List<Transaction> transactions
+    );
 
     @Select("""
             SELECT COUNT(*)
@@ -56,6 +92,7 @@ public interface TransactionMapper extends BaseMapper<Transaction> {
     @Select("""
             SELECT id,
                    account_id AS accountId,
+                   import_job_id AS importJobId,
                    external_transaction_no AS externalTransactionNo,
                    direction,
                    amount,

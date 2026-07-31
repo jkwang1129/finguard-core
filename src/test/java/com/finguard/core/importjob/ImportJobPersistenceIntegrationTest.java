@@ -73,7 +73,7 @@ class ImportJobPersistenceIntegrationTest {
         MigrationInfo current = flyway.info().current();
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("4");
+        assertThat(current.getVersion().getVersion()).isEqualTo("5");
 
         Integer tableCount = jdbcTemplate.queryForObject(
                 """

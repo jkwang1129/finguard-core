@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 3 Day 4 已完成：系统已经能够解析 CSV 结构，逐字段规范化与校验，批量解析账户，并识别文件内和数据库中的重复 CSV 交易。下一里程碑是 Week 3 Day 5：完成同步上传编排、文件哈希幂等、任务状态流转以及交易和行错误入库。
+当前进度为 Week 3 Day 5 已完成：系统已经能够通过受保护的 multipart 接口同步导入 CSV，按原始字节哈希保证文件幂等，推进任务状态，并批量写入合法交易和行错误。下一里程碑是 Week 3 Day 6：设计并实现同步版自动对账。
 
 ## 当前技术基线
 
@@ -44,7 +44,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 导入任务和行错误持久层，包含 SHA-256 文件哈希唯一约束、状态/错误码检查约束和稳定错误分页；
 - CSV 文件请求检查、原始字节 SHA-256、严格 UTF-8/BOM 与 RFC 4180 结构解析；
 - CSV 六字段规范化与业务校验、批量账户解析、文件内重复和数据库重复判断；
-- 199 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、分页、认证、RBAC、事务、索引和应用健康验收。
+- 同步 CSV 上传、哈希幂等、任务状态机、500 行批量写入、唯一键竞态降级和独立失败恢复；
+- 导入任务详情和行错误分页；`ADMIN` 可上传，`ADMIN`、`REVIEWER` 可查询；
+- 214 个自动化测试，以及真实 MySQL、JWT、HTTP CRUD、CSV 导入、分页、认证、RBAC、事务、索引和应用健康验收。
 
 ## 本地运行
 
@@ -147,9 +149,19 @@ DELETE /api/transactions/{transactionId}
 
 交易的两个查询接口允许 `ADMIN`、`REVIEWER`，其余写接口仅允许 `ADMIN`。
 
-当前交易创建接口只创建 `MANUAL` 交易。`CSV_IMPORT` 将由后续 CSV 导入流程内部创建，客户端不能自行指定交易来源。
+当前交易创建接口只创建 `MANUAL` 交易。`CSV_IMPORT` 只由 CSV 导入流程内部创建，客户端不能自行指定交易来源。
 
 分页接口默认 `page=1`、`size=20`，每页最多返回 100 条记录。交易查询还支持 `externalTransactionNo`、`startTime` 和 `endTime` 条件。
+
+### CSV 导入
+
+```text
+POST   /api/import-jobs
+GET    /api/import-jobs/{importJobId}
+GET    /api/import-jobs/{importJobId}/errors?page=1&size=20
+```
+
+上传接口使用 `multipart/form-data` 的 `file` 字段，只允许 `ADMIN`，文件最大 5 MiB。首次接收某组原始字节时返回 `201 + Location`；再次上传相同字节时返回已有任务的 `200`，且 `duplicateFile=true`。任务详情和错误分页允许 `ADMIN`、`REVIEWER` 查询。
 
 错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
 
@@ -166,8 +178,8 @@ DELETE /api/transactions/{transactionId}
 
 ## 当前限制
 
-- 已建立导入任务持久层、文件解析和逐行业务校验，但尚未实现 CSV 上传、任务编排和交易/行错误入库；
 - 尚未实现自动对账、风险识别、异常审核和审计；
+- CSV 导入当前为同步处理，尚未提供失败任务重试、强制重跑或覆盖导入；
 - 尚未引入 Redis 和 RabbitMQ。
 
 ## 当前范围

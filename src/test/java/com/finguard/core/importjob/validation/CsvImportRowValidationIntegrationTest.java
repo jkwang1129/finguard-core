@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CsvImportRowValidationIntegrationTest {
 
     private static final String ACCOUNT_PREFIX = "W3D4_";
+    private static final String USERNAME = "week3-day4-validation";
 
     @Autowired
     private CsvImportRowValidator validator;
@@ -39,6 +40,7 @@ class CsvImportRowValidationIntegrationTest {
 
     @Test
     void shouldValidateAgainstRealAccountsAndTransactionsWithoutWrites() {
+        Long importJobId = insertImportJob();
         Long activeAccountId = insertAccount(
                 "W3D4_ACTIVE",
                 "ACTIVE",
@@ -58,24 +60,28 @@ class CsvImportRowValidationIntegrationTest {
                 activeAccountId,
                 "EXT-EXISTING",
                 TransactionSource.CSV_IMPORT,
+                importJobId,
                 false
         );
         insertTransaction(
                 activeAccountId,
                 "EXT-DELETED",
                 TransactionSource.CSV_IMPORT,
+                importJobId,
                 true
         );
         insertTransaction(
                 activeAccountId,
                 "EXT-MANUAL",
                 TransactionSource.MANUAL,
+                null,
                 false
         );
         insertTransaction(
                 activeAccountId,
                 "EXT-CASE",
                 TransactionSource.CSV_IMPORT,
+                importJobId,
                 false
         );
 
@@ -173,11 +179,13 @@ class CsvImportRowValidationIntegrationTest {
             Long accountId,
             String externalTransactionNo,
             TransactionSource source,
+            Long importJobId,
             boolean deleted) {
         jdbcTemplate.update(
                 """
                 INSERT INTO transactions (
                     account_id,
+                    import_job_id,
                     external_transaction_no,
                     direction,
                     amount,
@@ -186,12 +194,13 @@ class CsvImportRowValidationIntegrationTest {
                     source,
                     deleted
                 )
-                VALUES (?, ?, 'EXPENSE', 12.50,
+                VALUES (?, ?, ?, 'EXPENSE', 12.50,
                         '2026-07-31 09:00:00',
                         'Week 3 Day 4 validation',
                         ?, ?)
                 """,
                 accountId,
+                importJobId,
                 externalTransactionNo,
                 source.name(),
                 deleted
@@ -236,6 +245,59 @@ class CsvImportRowValidationIntegrationTest {
         jdbcTemplate.update(
                 "DELETE FROM accounts WHERE account_no LIKE ?",
                 ACCOUNT_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
+                DELETE FROM import_jobs
+                WHERE created_by IN (
+                    SELECT id FROM users WHERE username = ?
+                )
+                """,
+                USERNAME
+        );
+        jdbcTemplate.update(
+                "DELETE FROM users WHERE username = ?",
+                USERNAME
+        );
+    }
+
+    private Long insertImportJob() {
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (username, password_hash, status)
+                VALUES (?, ?, 'ACTIVE')
+                """,
+                USERNAME,
+                "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+        );
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                Long.class,
+                USERNAME
+        );
+        jdbcTemplate.update(
+                """
+                INSERT INTO import_jobs (
+                    original_file_name,
+                    file_hash,
+                    file_size_bytes,
+                    status,
+                    total_rows,
+                    success_rows,
+                    failed_rows,
+                    duplicate_rows,
+                    created_by
+                )
+                VALUES ('validation.csv', ?, 1, 'SUCCESS',
+                        3, 3, 0, 0, ?)
+                """,
+                "d".repeat(64),
+                userId
+        );
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM import_jobs WHERE created_by = ?",
+                Long.class,
+                userId
         );
     }
 }

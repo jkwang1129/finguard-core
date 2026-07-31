@@ -18,10 +18,12 @@ import com.finguard.core.transaction.vo.TransactionResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +42,9 @@ class PaginationQueryIntegrationTest {
 
     @Autowired
     private TransactionMapper transactionMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void accountQueryShouldPaginateFilterAndHideSoftDeletedRows() {
@@ -193,6 +198,9 @@ class PaginationQueryIntegrationTest {
             LocalDateTime transactionTime) {
         Transaction transaction = new Transaction();
         transaction.setAccountId(accountId);
+        if (source == TransactionSource.CSV_IMPORT) {
+            transaction.setImportJobId(insertImportJob());
+        }
         transaction.setExternalTransactionNo(externalTransactionNo);
         transaction.setDirection(direction);
         transaction.setAmount(new BigDecimal("10.00"));
@@ -203,5 +211,48 @@ class PaginationQueryIntegrationTest {
         assertThat(transactionMapper.insert(transaction)).isEqualTo(1);
         assertThat(transaction.getId()).isNotNull();
         return transaction;
+    }
+
+    private Long insertImportJob() {
+        String token = UUID.randomUUID().toString();
+        String username = "pagination-" + token;
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (username, password_hash, status)
+                VALUES (?, ?, 'ACTIVE')
+                """,
+                username,
+                "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+        );
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                Long.class,
+                username
+        );
+        String fileHash = token.replace("-", "").repeat(2);
+        jdbcTemplate.update(
+                """
+                INSERT INTO import_jobs (
+                    original_file_name,
+                    file_hash,
+                    file_size_bytes,
+                    status,
+                    total_rows,
+                    success_rows,
+                    failed_rows,
+                    duplicate_rows,
+                    created_by
+                )
+                VALUES (?, ?, 1, 'SUCCESS', 1, 1, 0, 0, ?)
+                """,
+                token + ".csv",
+                fileHash,
+                userId
+        );
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM import_jobs WHERE created_by = ?",
+                Long.class,
+                userId
+        );
     }
 }

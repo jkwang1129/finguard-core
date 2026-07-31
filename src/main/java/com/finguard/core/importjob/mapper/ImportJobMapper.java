@@ -5,6 +5,9 @@ import com.finguard.core.importjob.entity.ImportJob;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.time.LocalDateTime;
 
 @Mapper
 public interface ImportJobMapper extends BaseMapper<ImportJob> {
@@ -30,4 +33,44 @@ public interface ImportJobMapper extends BaseMapper<ImportJob> {
             WHERE file_hash = #{fileHash}
             """)
     ImportJob findByFileHash(@Param("fileHash") String fileHash);
+
+    @Update("""
+            UPDATE import_jobs
+            SET status = 'PROCESSING',
+                started_at = #{startedAt}
+            WHERE id = #{importJobId}
+              AND status = 'PENDING'
+            """)
+    int markProcessing(
+            @Param("importJobId") Long importJobId,
+            @Param("startedAt") LocalDateTime startedAt
+    );
+
+    @Update("""
+            UPDATE import_jobs
+            SET status = #{status},
+                total_rows = #{totalRows},
+                success_rows = #{successRows},
+                failed_rows = #{failedRows},
+                duplicate_rows = #{duplicateRows},
+                file_error_code = #{fileErrorCode},
+                error_summary = #{errorSummary},
+                finished_at = #{finishedAt}
+            WHERE id = #{importJobId}
+              AND status = 'PROCESSING'
+            """)
+    int completeProcessing(
+            @Param("importJobId") Long importJobId,
+            @Param("status")
+            com.finguard.core.importjob.model.ImportJobStatus status,
+            @Param("totalRows") int totalRows,
+            @Param("successRows") int successRows,
+            @Param("failedRows") int failedRows,
+            @Param("duplicateRows") int duplicateRows,
+            @Param("fileErrorCode")
+            com.finguard.core.importjob.model.ImportFileErrorCode
+                    fileErrorCode,
+            @Param("errorSummary") String errorSummary,
+            @Param("finishedAt") LocalDateTime finishedAt
+    );
 }

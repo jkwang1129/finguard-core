@@ -23,8 +23,9 @@
 | Week 3 Day 2 | 已完成 | 导入任务与行错误的数据模型、V4 迁移、Mapper 和真实数据库验收完成 |
 | Week 3 Day 3 | 已完成 | 原始文件校验、SHA-256 指纹、CSV 结构解析和边界测试完成 |
 | Week 3 Day 4 | 已完成 | 逐行规范化、批量账户解析、文件内/数据库重复判断和真实 MySQL 验收完成 |
-| Week 3 Day 5 | 下一步 | 同步上传编排、文件哈希幂等、任务状态流转、交易/行错误入库 |
-| Week 3 Day 6～Day 7 | 待规划 | 同步版自动对账和 Week 3 综合验收 |
+| Week 3 Day 5 | 已完成 | 同步上传、文件哈希幂等、状态流转、批量持久化、失败恢复和权限验收完成 |
+| Week 3 Day 6 | 下一步 | 设计并实现同步版自动对账 |
+| Week 3 Day 7 | 待规划 | Week 3 综合验收 |
 | Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
@@ -462,6 +463,104 @@
 - **验收结论**：真实 MySQL `EXPLAIN` 分别使用 `uk_accounts_account_no` 和 `uk_transactions_account_source_external_no`；软删除、来源、大小写、500+1 分批查询和零写入副作用均由自动化测试覆盖。
 - **提交**：`feat: validate CSV import rows`
 
+### Week 3 Day 5：同步 CSV 上传与持久化闭环
+
+- **状态**：已完成
+- **业务目标**：把 Day 2～Day 4 已完成的任务持久层、文件解析和逐行校验串成一个可通过真实 HTTP 调用的同步导入闭环；同一原始文件只处理一次，合法行写入交易，错误行可追踪，任务状态和统计始终与数据库结果一致。
+- **请求流**：
+
+  ```text
+  ADMIN 以 multipart/form-data 上传 file
+    → 在创建任务前完成请求级检查并读取原始字节
+    → 对原始字节计算 SHA-256
+    → 命中已有 fileHash：返回原任务（200，duplicateFile=true）
+    → 未命中：创建 PENDING 任务（createdBy 取 JWT subject）
+    → 独立事务推进为 PROCESSING
+    → 解析 CSV 文件结构并执行 Day 4 逐行校验
+    → 受控事务写入 CSV_IMPORT 交易和行错误
+    → 汇总统计并进入 SUCCESS / PARTIAL_SUCCESS / FAILED
+    → 返回新任务（201，Location=/api/import-jobs/{id}）
+  ```
+
+- **范围边界**：
+  - 本日实现 `POST /api/import-jobs`、`GET /api/import-jobs/{id}` 和 `GET /api/import-jobs/{id}/errors`；上传仅 ADMIN，两个查询接口允许 ADMIN 和 REVIEWER。
+  - 本日只完成同步导入；不引入 RabbitMQ、重试、死信、消费者幂等或异步轮询语义。
+  - 本日新增最小 V5，把 `CSV_IMPORT` 交易关联到来源导入任务；不创建对账、风险、审核、审计或 MQ 表。
+  - 本日不执行自动对账，不修改已有 MANUAL 交易 CRUD，不提供重复文件强制重跑、失败任务重试、覆盖导入或任务删除接口。
+  - 文件仍只在内存中处理，不落本地磁盘，不保存整条原始 CSV，不把 SQL、路径、堆栈或第三方异常暴露给客户端。
+
+- **关键设计决定**：
+  - 把 Day 3 解析入口最小拆分为“请求检查与指纹准备”和“文件结构解析”两个阶段：请求级失败不创建任务；哈希确定后先做文件幂等并创建任务；UTF-8、表头、CSV 结构和行数等文件级失败发生在任务创建后。
+  - `transactions` 新增可空 `import_job_id` 和 `RESTRICT` 外键；`MANUAL` 必须为 `null`，`CSV_IMPORT` 必须关联一个任务。新增 V5，禁止修改 V1～V4，并同步更新迁移版本、表结构和测试夹具断言。
+  - 文件幂等采用“应用层按哈希预查 + `uk_import_jobs_file_hash` 并发兜底”：并发插入冲突后必须在新事务中读取并返回原任务，不能把重复文件当成通用 `409`，也不能重新解析或重复写交易。
+  - 状态推进采用编排 Service 与事务执行 Service 分离，避免同类方法调用使 `@Transactional` 失效：任务创建、进入 `PROCESSING`、业务写入和系统失败恢复使用明确的事务边界。
+  - 文件级失败在已有任务上保存稳定 `ImportFileErrorCode` 和安全摘要，终态为 `FAILED`，不写交易和普通行错误。
+  - 行级错误是正常业务结果，不抛异常回滚其他合法行；合法交易、行错误、四项统计和最终状态在同一个处理事务中提交。
+  - 交易和行错误按固定批次写入。交易批次若发生唯一键竞态，先回滚该批次的保存点，再逐行重放定位冲突；只有命中 `uk_transactions_account_source_external_no` 才转成 `DUPLICATE_TRANSACTION`，其他完整性错误继续按系统失败处理。禁止使用会吞掉其他数据错误的 `INSERT IGNORE`。
+  - 最终统计必须满足 `totalRows = successRows + failedRows`；同一逻辑记录有多个错误时 `failedRows` 只计一次，`duplicateRows` 只统计含两类重复错误的失败记录。全部成功为 `SUCCESS`，有成功也有失败为 `PARTIAL_SUCCESS`，零成功为 `FAILED`。
+  - 未预期异常必须使本次处理事务中的交易、行错误和终态更新整体回滚，再由独立事务把仍处于 `PROCESSING` 的任务标记为 `FAILED/PROCESSING_FAILED`；不能出现任务显示成功但交易只落库一部分。
+  - 上传人只从已验签 JWT 的数字 `subject` 提取，不接受请求参数伪造 `createdBy`；统一异常处理负责缺少文件、非法文件、超限 `413`、任务不存在 `404` 和安全的 `500`。
+
+- **执行顺序**：
+  1. 先产出 Day 5 设计文档，锁定接口 DTO/VO、状态机、事务传播、批处理降级、异常映射和并发测试方案。
+  2. 调整文件准备/解析边界并配置 multipart 大小限制，保持 Day 3 的哈希、UTF-8、BOM、换行和 CSV 语义不变。
+  3. 新增 V5、交易任务关联和 Mapper 写入能力，先用真实 MySQL 验证外键、来源约束和批量 SQL。
+  4. 实现同步导入编排、文件哈希幂等、任务状态推进、交易/行错误写入、统计汇总和独立失败恢复。
+  5. 实现上传、任务详情、错误分页 DTO/VO、Controller、统一错误映射和精确 RBAC 路由。
+  6. 先跑纯单元/Controller 测试，再跑真实 MySQL 集成、并发幂等和故障注入测试。
+  7. 执行完整回归、真实 JWT + HTTP + MySQL 验收、数据清理、端口清理、范围审计和 `git diff --check`。
+
+- **任务**：
+  - [x] 新增 `docs/design/week3-day5-sync-import-orchestration-design.md`，画出首次上传、重复上传、文件失败、行错误和系统失败五条时序。
+  - [x] 建立文件准备结果，使请求级检查、原始字节 SHA-256、文件哈希预查和结构解析的先后顺序符合 Day 1 契约。
+  - [x] 配置 multipart 上传上限，并把缺少文件、空文件、非法扩展名和超过 5 MiB 分别映射为统一 `400/413`；被拒绝请求不得创建任务。
+  - [x] 新增 `V5__link_import_jobs_to_transactions.sql`，为交易建立导入任务外键和来源关联约束；更新 `Transaction`、数据库基线测试及所有受影响夹具。
+  - [x] 扩展 Mapper：条件式任务状态更新、交易/行错误分批写入、任务详情和错误稳定分页；不添加没有查询路径依据的索引。
+  - [x] 实现首次任务创建和哈希幂等；覆盖串行重复与并发重复，保证只存在一个任务 ID，交易不会重复增加。
+  - [x] 实现 `PENDING → PROCESSING → SUCCESS/PARTIAL_SUCCESS/FAILED` 的正向状态校验，以及 `startedAt`、`finishedAt`、统计和安全摘要填写。
+  - [x] 将 `ValidatedImportRow` 转为固定 `CSV_IMPORT` 且携带 `importJobId` 的交易，将 `ImportRowValidationError` 转为 `ImportRowError`。
+  - [x] 实现批次写入和唯一键冲突降级，把并发产生的交易业务键冲突追加为稳定行错误，同时保留其他合法行。
+  - [x] 实现文件级失败与未预期系统失败的两种恢复路径，证明后者会回滚本次交易和行错误后再独立标记任务失败。
+  - [x] 实现上传响应、任务详情和 `PageResponse` 错误分页；首次任务返回 `201 + Location`，重复文件返回 `200 + duplicateFile=true`。
+  - [x] 更新 Security 路由：ADMIN 可上传，ADMIN/REVIEWER 可查询，匿名为 `401`，REVIEWER 上传为 `403`，拒绝请求无数据库副作用。
+  - [x] 单元与 Controller 测试覆盖状态选择、统计去重、DTO 映射、JWT subject、HTTP 状态、Location、错误分页和安全错误响应。
+  - [x] MySQL 集成测试覆盖全成功、部分成功、全行失败、五类文件失败、跨文件重复、软删除重复、MANUAL 同键共存、串行/并发同文件、唯一键竞态和系统故障回滚。
+
+- **关键文件**：
+  - `docs/design/week3-day5-sync-import-orchestration-design.md`
+  - `src/main/resources/db/migration/V5__link_import_jobs_to_transactions.sql`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/importjob/controller/`
+  - `src/main/java/com/finguard/core/importjob/dto/`
+  - `src/main/java/com/finguard/core/importjob/service/`
+  - `src/main/java/com/finguard/core/importjob/parser/`
+  - `src/main/java/com/finguard/core/importjob/mapper/`
+  - `src/main/java/com/finguard/core/transaction/entity/Transaction.java`
+  - `src/main/java/com/finguard/core/transaction/mapper/TransactionMapper.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/java/com/finguard/core/common/exception/`
+  - `src/test/java/com/finguard/core/importjob/`
+
+- **验收**：
+  - [x] `docker compose ps` 显示 MySQL 为 `healthy`；空库可从 V1 迁移到 V5，V1～V4 校验和不变。
+  - [x] 合法文件通过真实 MySQL 集成测试后任务为 `SUCCESS`，交易均为 `CSV_IMPORT` 且关联正确任务；真实 ADMIN JWT 部分成功上传返回 `201 + Location`。
+  - [x] 同一文件再次或并发上传返回同一任务，只有首次请求创建数据；不同字节但相同业务键按行级重复处理。
+  - [x] 部分成功、全部行失败和文件级失败的状态、统计、错误码、行错误与数据库副作用完全符合 Day 1 契约。
+  - [x] 故障注入证明未预期异常不会留下本次交易或行错误，任务最终为 `FAILED/PROCESSING_FAILED`。
+  - [x] ADMIN/REVIEWER/匿名权限矩阵通过；任务详情和错误分页顺序稳定，查询不存在任务为统一 `404`。
+  - [x] Day 5 新增同步导入测试 12/12、解析回归 16/16、完整 `mvn clean test` 214/214，均无跳过。
+  - [x] 真实 HTTP/MySQL 验收得到 `PARTIAL_SUCCESS|3|2|1|0`、2 条关联交易和 1 条行错误；重复上传、权限矩阵、数据清理和端口 8080 清理通过。
+  - [x] `git diff --check` 通过；范围中没有 RabbitMQ、Redis、自动对账、风险、审核、审计、重跑或覆盖导入实现。
+
+- **学习重点**：
+  - 必须掌握：multipart 请求、SHA-256 文件幂等、数据库唯一约束、状态机、Spring 事务传播/代理、保存点、批处理、异常分层和 JWT 当前用户。
+  - 边做边学：并发唯一键冲突、故障恢复、稳定分页、HTTP `201/200/400/413/404` 语义和真实集成测试。
+  - 暂不展开：RabbitMQ 可靠消息、分布式事务、Redis 幂等、自动对账、风险策略和审核状态机。
+
+- **回滚**：代码和路由可按 Day 5 文件范围回退；V5 一旦在共享数据库执行不得修改或删除，若必须撤销只能新增补偿迁移。回滚后 Day 2～Day 4 的持久层、解析器和校验器仍可独立使用。
+- **验收结论**：首次真实上传返回 `201/PARTIAL_SUCCESS`，相同原始字节再次上传返回同一任务的 `200`；REVIEWER 查询为 `200`、上传为 `403`，匿名查询为 `401`。数据库状态、统计和关联记录一致，验收用户、账户、任务、交易、错误、临时文件和监听端口均已清理。
+- **提交**：`feat: implement synchronous CSV import`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -494,3 +593,6 @@
 | Week 2 Day 6 事务/索引 | `dbe799d` |
 | Week 2 Day 7 综合验收 | `7febe0d` |
 | Week 3 Day 1 CSV 契约 | `42bf721` |
+| Week 3 Day 2 导入持久层 | `8c24cb1` |
+| Week 3 Day 3 CSV 解析 | `471a36d` |
+| Week 3 Day 4 行校验 | `2b52b6a` |

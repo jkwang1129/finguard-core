@@ -5,6 +5,9 @@ import com.finguard.core.account.exception.DuplicateAccountNoException;
 import com.finguard.core.account.exception.InvalidAccountInputException;
 import com.finguard.core.account.exception.InvalidAccountOperationException;
 import com.finguard.core.auth.exception.InvalidCredentialsException;
+import com.finguard.core.importjob.exception.ImportJobNotFoundException;
+import com.finguard.core.importjob.exception.InvalidImportFileRequestException;
+import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
 import com.finguard.core.transaction.exception.InvalidTransactionInputException;
 import com.finguard.core.transaction.exception.InvalidTransactionOperationException;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
@@ -69,6 +73,49 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND,
                 ErrorCode.TRANSACTION_NOT_FOUND,
                 exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(ImportJobNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleImportJobNotFound(
+            ImportJobNotFoundException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                ErrorCode.IMPORT_JOB_NOT_FOUND,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(InvalidImportFileRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidImportFile(
+            InvalidImportFileRequestException exception,
+            HttpServletRequest request) {
+        HttpStatus status = exception.getErrorCode()
+                == ImportFileRequestErrorCode.FILE_TOO_LARGE
+                ? HttpStatus.PAYLOAD_TOO_LARGE
+                : HttpStatus.BAD_REQUEST;
+        return error(
+                status,
+                ErrorCode.INVALID_IMPORT_FILE,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(
+            MaxUploadSizeExceededException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                ErrorCode.INVALID_IMPORT_FILE,
+                "File must not exceed 5 MiB",
                 request,
                 List.of()
         );
