@@ -27,6 +27,7 @@
 | Week 3 Day 6 | 已完成 | 同步自动对账、四类结果、幂等、批处理、失败恢复和权限验收完成 |
 | Week 3 Day 7 | 已完成 | Week 3 综合验收、真实 MySQL/JWT/HTTP 验收、清理和周复盘完成 |
 | Week 4 Day 1 | 已完成 | 异步导入/对账消息契约、文件持久化方案、Outbox、Confirm/ACK、幂等、重试和死信边界已锁定 |
+| Week 4 Day 2 | 已完成 | RabbitMQ 依赖、Docker 服务、连接配置、导入/对账基础拓扑、真实连接和健康验收完成 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -764,6 +765,53 @@
 - **验收结论**：Day 1 设计文档和任务清单已完成，异步请求语义、原始文件持久化、消息契约、可靠投递和失败处理边界已锁定；实现从 Day 2 开始。
 - **提交**：`docs: design week4 day1 async messaging contract`
 
+### Week 4 Day 2：RabbitMQ 基础设施与基础拓扑
+
+- **状态**：已完成
+- **业务目标**：让 FinGuard Core 连接真实 RabbitMQ，并自动声明后续异步导入与对账所需的持久化基础拓扑；本日不改变 Week 3 的同步业务闭环。
+- **范围边界**：
+  - 只实现 AMQP 依赖、RabbitMQ Docker 服务、连接配置、基础 exchange/queue/binding 和连接/路由测试。
+  - 不实现 `202 Accepted` 上传改造、文件持久化、Outbox、生产者、消费者、Publisher Confirm、手动 ACK、重试、DLQ 或业务消息处理。
+  - 不新增 Flyway 迁移，不修改 V1～V6，不引入 Redis、风险、审核、审计、监控或前端。
+- **执行顺序**：
+  1. 核对 Day 1 锁定的命名、持久化和 Day 2～Day 6 边界。
+  2. 增加 Spring AMQP 依赖、RabbitMQ Compose 服务和环境变量模板。
+  3. 增加 Spring RabbitMQ 连接配置，凭据不写入源码。
+  4. 声明导入和对账两个 direct durable exchange、两个 durable 主队列及其精确 routing binding。
+  5. 用真实 RabbitMQ 测试队列存在和消息路由，再运行完整回归。
+  6. 启动应用进行健康检查，清理测试消息和临时端口，完成范围审计。
+- **关键文件**：
+  - `docs/design/week4-day2-rabbitmq-foundation.md`
+  - `pom.xml`
+  - `docker-compose.yml`
+  - `.env.example`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/messaging/config/RabbitMessagingConfiguration.java`
+  - `src/test/java/com/finguard/core/messaging/RabbitMessagingTopologyIntegrationTest.java`
+- **拓扑**：
+  - `finguard.import.exchange` → `import.requested` → `finguard.import.queue`
+  - `finguard.reconciliation.exchange` → `reconciliation.requested` → `finguard.reconciliation.queue`
+  - 重试队列和死信队列留给 Day 6。
+- **任务**：
+  - [x] 增加 `spring-boot-starter-amqp`。
+  - [x] 增加 RabbitMQ Docker 服务、持久化 volume、管理端口和健康检查。
+  - [x] 增加连接配置及 `.env.example` 环境变量模板。
+  - [x] 声明导入/对账 exchange、主队列和 binding。
+  - [x] 增加真实连接、队列存在和 routing key 路由测试。
+  - [x] 完成 RabbitMQ/MySQL/HTTP 验收、测试数据清理和端口清理。
+- **验收**：
+  - [x] RabbitMQ 和 MySQL 容器均为 `healthy`。
+  - [x] 聚焦测试 `2/2` 通过。
+  - [x] `mvn clean test` 为 `232/232`，无失败、错误或跳过。
+  - [x] RabbitMQ 实际 exchange、queue、binding 检查通过，测试消息清零。
+  - [x] FinGuard 临时端口 `18080` 的 `/actuator/health` 返回 `HTTP 200 UP`，端口已释放。
+  - [x] 8080 的无关 `cangqiong-server` 进程未被停止或修改。
+  - [x] `git diff --check` 通过，变更范围未提前进入 Day 3～Day 6。
+- **学习重点**：Exchange/Queue/Binding/Routing Key、direct exchange、durable topology、Spring AMQP 自动声明、Docker healthcheck 和环境变量配置。
+- **回滚**：仅回退本日 AMQP 依赖、RabbitMQ 服务、连接/拓扑配置、聚焦测试和文档；不修改 V1～V6，不删除 RabbitMQ 数据卷。
+- **验收结论**：RabbitMQ 基础设施和导入/对账基础拓扑已可运行、可连接、可路由，后续 Day 3 可在其上实现文件持久化和 Outbox。
+- **提交**：`feat: add RabbitMQ messaging foundation`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -771,7 +819,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1 已完成异步消息契约设计；后续实现 RabbitMQ 异步导入与对账、Publisher Confirm、手动 ACK、消费幂等、重试和死信队列 |
+| Week 4 | Day 1 异步消息契约和 Day 2 RabbitMQ 基础设施已完成；后续实现文件持久化、Outbox、异步消费者、Publisher Confirm、手动 ACK、消费幂等、重试和死信队列 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 

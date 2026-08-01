@@ -7,6 +7,13 @@ spring:
     url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3306}/${MYSQL_DATABASE:finguard}?sslMode=DISABLED&allowPublicKeyRetrieval=true&connectionTimeZone=Asia/Shanghai"
     username: "${MYSQL_USER:finguard}"
     password: "${MYSQL_PASSWORD}"
+  rabbitmq:
+    host: "${RABBITMQ_HOST:127.0.0.1}"
+    port: "${RABBITMQ_PORT:5672}"
+    username: "${RABBITMQ_USERNAME:finguard}"
+    password: "${RABBITMQ_PASSWORD}"
+    virtual-host: "${RABBITMQ_VIRTUAL_HOST:/}"
+    connection-timeout: 5s
   servlet:
     multipart:
       max-file-size: 5MB
