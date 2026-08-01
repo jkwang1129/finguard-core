@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 4 Day 6 已完成：导入和对账请求均由 Outbox 可靠发布并由真实 RabbitMQ 消费者异步处理。两条链路使用任务行锁、终态短路和数据库唯一约束保持至少一次投递下的业务幂等；临时故障依次进入 5 秒、30 秒两级 retry queue，第三次失败安全标记现有非终态任务并进入对应 DLQ。非法消息和不存在的任务直接隔离，retry/DLQ 只有在 Publisher Confirm 成功且没有 mandatory return 后才 ACK 原消息。
+当前进度为 Week 4 Day 7 已完成：导入和对账请求均由 Outbox 可靠发布并由真实 RabbitMQ 消费者异步处理。Day 7 已完成干净 Compose 重建、JWT/HTTP 正常链路、Broker/消费者故障演练、重试与 DLQ 验收、数据消息清理和周复盘；完整 `mvn clean test` 为 287/287。
 
 ## 当前技术基线
 

@@ -32,6 +32,7 @@
 | Week 4 Day 4 | 已完成 | 异步导入消费者、数据库业务事务、提交后手动 ACK 和真实验收完成 |
 | Week 4 Day 5 | 已完成 | 导入消费幂等、任务行锁、ACK 丢失红投和消费者崩溃恢复已完成真实验收 |
 | Week 4 Day 6 | 已完成 | 异步对账消费者、两级有限重试、失败分类、DLQ 隔离和真实验收完成 |
+| Week 4 Day 7 | 已完成 | 综合验收真实异步闭环、可靠性故障路径、幂等、清理并完成周复盘 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -1054,7 +1055,63 @@
 - **学习重点**：RabbitMQ TTL、DLX/DLQ、消息红投与重发的区别、`x-death`、有限退避、异常分类、Publisher Confirm 与 Consumer ACK 的组合、毒消息隔离、至少一次投递下的幂等、数据库行锁和事务恢复。
 - **常见错误预防**：不要 `basicNack(..., true)` 无限回主队列；不要用 `deliveryTag` 或 `x-death` 当业务幂等键；不要先 ACK 再发布 retry/DLQ；不要每次重试生成新 `messageId`；不要把业务校验失败当临时故障反复执行；不要在重试耗尽时覆盖已完成终态；不要为 Day 6 顺手加入管理后台或 Redis。
 - **回滚**：可回退 Day 6 新增的 retry/DLQ 声明、失败路由组件、对账消费者、配置和测试，恢复 Day 5 行为；V1～V7、已完成任务、Outbox、交易和对账结果不得删除或重放。若队列参数已在本地 Broker 声明，回滚前只清理本项目明确命名的 Day 6 队列，不能删除 RabbitMQ 数据卷或其他队列。
-- **提交**：`feat: add reconciliation consumer retries and DLQ`（见本次提交）
+- **提交**：`0015610 feat: add reconciliation consumer retries and DLQ`
+
+### Week 4 Day 7：综合验收与周复盘
+
+- **状态**：已完成
+- **业务目标**：从可重建的干净环境出发，证明 Week 4 的异步导入与异步对账不仅能走通正常流程，还能在消息重复、Broker/消费者临时故障、重试耗尽和 ACK 丢失等场景下保持任务可恢复、业务数据唯一、失败消息可隔离，并形成可复核、可演示、可用于面试讲解的周验收证据。
+- **当前基线**：Day 1～Day 6 已完成异步消息契约、RabbitMQ 基础拓扑、原始文件与 Outbox 持久化、可靠发布、导入/对账消费者、手动 ACK、任务行锁、终态幂等、两级有限重试和独立 DLQ；Day 6 完整测试基线为 287/287，但本日必须独立复验，不能直接把历史结论当作 Day 7 证据。
+- **范围边界**：
+  - 本日只做 Week 4 已实现能力的综合验收、缺陷核对、文档复盘、数据/消息清理和 Git 收口，不新增业务功能。
+  - 不修改已应用的 V1～V7；不新增 Redis、风险规则、人工审核、乐观锁、审计日志、监控、前端或 Week 6 部署能力。
+  - 若验收发现真实缺陷，先保存失败证据，再做最小范围修复并重新执行相关聚焦测试和完整回归；不得通过放宽断言、跳过测试或手工改库伪造通过。
+  - 重建 Compose 数据卷前必须确认其中只有本项目可丢弃的测试数据；清理 RabbitMQ 时只操作本项目明确命名的 `finguard.*` 队列和消息，不删除其他项目资源。
+- **执行顺序**：
+  1. 核对 Day 1 契约、Day 2～Day 6 提交、当前代码和测试，建立“设计承诺 → 实际实现 → 验收证据”清单。
+  2. 在确认数据可丢弃后重建项目专属 MySQL/RabbitMQ Compose 环境，等待两个容器健康，验证 Flyway V1→V7 和 RabbitMQ durable topology 可从空环境自动恢复。
+  3. 先运行消息拓扑、Outbox、导入消费者、对账消费者、JWT/RBAC 和数据库基线聚焦测试，再运行完整 `mvn clean test`，记录用例总数、失败、错误和跳过数。
+  4. 启动真实 Java 17 应用并轮询 `/actuator/health`，使用 ADMIN/REVIEWER JWT 完成账户、人工交易、`202 + Location` 异步导入、任务轮询、`202 + Location` 异步对账、结果查询、重复请求和权限矩阵验收。
+  5. 在真实 Broker 上验证 Outbox 发布临时失败后按计划恢复为 `SENT`；分别验证导入和对账消费者的一次临时故障经 retry.1 恢复，以及持续故障严格经过 retry.1、retry.2 后进入各自 DLQ。
+  6. 结合自动化测试和真实 MySQL/RabbitMQ 证据复核重复消息、并发投递、提交后 ACK 丢失、非法消息和不存在任务均不会产生重复交易、重复对账结果或错误终态。
+  7. 按外键顺序清理验收用户、账户、任务、原始文件、交易、行错误、对账结果和 Outbox；记录证据后清空本项目测试消息，确认 8 个队列 `ready=0/unacked=0`，停止应用并释放 8080 端口。
+  8. 新增 Week 4 复盘文档，更新 README、当前进度和 Git 里程碑索引，完成范围审计、敏感信息检查、`git diff --check` 和提交前复核。
+- **任务**：
+  - [x] 新增 `docs/review/week4-review.md`，按 Day 记录实际交付、提交、设计偏差、限制和 Week 5 边界。
+  - [x] 验证干净 Compose 环境中 MySQL、RabbitMQ 均为 `healthy`，Flyway V1→V7 和 3 个 exchange、8 个 durable queue、bindings、TTL、DLX/DLQ 参数可自动重建。
+  - [x] 完成消息、Outbox、导入、对账、认证和数据库聚焦测试，并执行完整 `mvn clean test`；总用例 287 个，零失败、零错误、零跳过。
+  - [x] 使用真实 JWT/HTTP 跑通异步导入与异步对账正常链路，验证 `202 + Location`、终态轮询、重复请求复用、ADMIN/REVIEWER 权限和不存在资源响应。
+  - [x] 验证 Outbox 在 Broker 临时不可用时不丢事件，恢复后使用稳定 `messageId` 发布并最终进入 `SENT`，不产生重复业务副作用。
+  - [x] 对导入和对账分别验证一次临时故障恢复、持续故障两级退避与 DLQ 隔离，核对消息 headers、队列去向、任务安全失败摘要和主队列不忙循环。
+  - [x] 复核重复/并发消息、ACK 丢失、非法消息、任务不存在和转交失败场景，确认任务、交易、行错误、对账结果与统计守恒。
+  - [x] 完成数据库数据、Outbox、测试消息、临时凭据、应用进程和端口清理，确认没有提交 `.env`、JWT 密钥、RabbitMQ/MySQL 密码或内部异常堆栈。
+  - [x] 更新 `TASKS.md`、`README.md` 和 Git 里程碑索引，执行范围审计与 `git diff --check`，形成 Week 4 可演示和面试复盘材料。
+- **关键文件**：
+  - `TASKS.md`
+  - `README.md`
+  - `docs/review/week4-review.md`
+  - `docs/design/week4-day1-async-messaging-contract.md`
+  - `docker-compose.yml`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/messaging/`
+  - `src/test/java/com/finguard/core/messaging/`
+  - `src/test/java/com/finguard/core/importjob/`
+  - `src/test/java/com/finguard/core/reconciliation/`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+- **验收标准**：
+  - 从确认可清理的空数据卷启动后，MySQL 与 RabbitMQ 均为 `healthy`，应用健康为 `UP`，Flyway 最终版本为 7；3 个 exchange 和 8 个队列的 durable、binding、TTL、DLX、routing key 与代码配置一致。
+  - 聚焦测试和完整 `mvn clean test` 全部通过；完整回归不少于 287 个用例，0 failures、0 errors、0 skipped，复盘文档记录实际数字而不是预填数字。
+  - 真实 ADMIN 首次上传返回 `202/PENDING + Location`，轮询到 `SUCCESS` 或 `PARTIAL_SUCCESS`；首次对账返回 `202/PENDING + Location`，轮询到 `COMPLETED`，四类统计之和等于总数且结果行数与 MySQL 一致。
+  - 相同文件和相同对账请求复用原任务；同一业务消息顺序或并发投递至少 2 次、提交后 ACK 丢失红投后，仍只有一套交易/行错误/对账结果和一个正确终态。
+  - Outbox 在真实 Broker 临时不可用时保留可重试状态，Broker 恢复后以相同 `messageId` 可靠发布并进入 `SENT`；事件没有丢失，也没有重复业务写入。
+  - 导入和对账的一次临时系统故障均经 retry.1 后恢复；持续故障均严格经过 retry.1、retry.2 并只进入对应 DLQ 一次，现有非终态任务安全标记为 `FAILED`，主队列无忙循环。
+  - 非法版本/事件类型/attempt、任务不存在和转交失败的消息去向正确，不调用业务处理或污染 MySQL；REVIEWER 查询为 `200`、写入为 `403`，匿名请求为 `401`，不存在资源为 `404`。
+  - 验收后相关 MySQL 业务数据和 Outbox 记录清零，本项目 8 个队列均为 `ready=0/unacked=0`，临时凭据未落盘，8080 端口已释放，`git diff --check` 和范围审计通过。
+- **验收结论**：干净 Compose 环境自动恢复 Flyway V1～V7、3 个 exchange 和 8 个 durable queue；聚焦测试 56/56、完整 `mvn clean test` 287/287 通过，零失败、零错误、零跳过。真实 Java 17/JWT/HTTP 链路完成账户、人工交易、`202 + Location` 异步导入与对账、重复请求复用和 ADMIN/REVIEWER/匿名/不存在资源权限验收，导入结果为 2 行成功，对账结果为 matched=1、unmatched=1。RabbitMQ 停止期间 Outbox 保持 RETRY，恢复后同一消息进入 SENT 且任务成功；导入与对账的临时故障均可从 retry.1 恢复，持续故障进入 retry.2/DLQ，取出的 DLQ 消息均为 `attempt=2`、`RETRY_EXHAUSTED`，非终态任务安全标记 FAILED。数据库业务表、Outbox、验收用户和 8 个队列均已清零，8080 已释放，范围审计和 `git diff --check` 通过。详见 `docs/review/week4-review.md`。
+- **学习重点**：用一条可解释的可靠性链路串起 HTTP `202`、数据库事务、Outbox、Publisher Confirm、mandatory return、持久化消息、手动 ACK、至少一次投递、幂等、TTL/DLX/DLQ、故障恢复和最终一致性；能够说明“消息不丢”和“业务不重复”分别由哪些机制保证，以及为什么 RabbitMQ 不能提供端到端 exactly-once。
+- **常见错误预防**：不要只验 happy path；不要把“消息进队列”当作“业务已完成”；不要把 Outbox 重试和消费者 retry queue 混为一谈；不要用无限 `requeue=true` 制造忙循环；不要在记录 DLQ 证据前清空队列；不要用历史 287/287 代替本日实跑；不要为通过验收手工改任务终态或数据库统计；不要把 Week 5 功能混入收口提交。
+- **回滚**：本日原则上只新增复盘证据和更新文档，不回退 Day 1～Day 6 已验证的异步实现。若本日尚未执行，回滚只需删除本节并恢复当前进度/路线表；若验收中产生临时数据或消息，按本项目表的外键顺序和 `finguard.*` 队列范围清理，不删除 V1～V7、不重放已完成业务任务、不删除 RabbitMQ 整个数据卷来掩盖问题。
+- **提交建议**：`docs: complete week 4 acceptance review`
 
 ## 7. 后续路线
 
@@ -1063,7 +1120,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1～Day 6 已完成；Day 7 完成周验收与复盘 |
+| Week 4 | Day 1～Day 7 已完成；异步导入/对账、Outbox、重试/DLQ、综合验收与周复盘均已收口 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -1099,4 +1156,5 @@
 | Week 4 Day 3 Outbox 可靠发布 | `bfd9a25` |
 | Week 4 Day 4 异步导入消费者 | `e6c6edf` |
 | Week 4 Day 5 导入消费幂等与崩溃恢复 | `be4779b` |
-| Week 4 Day 6 异步对账、有限重试与死信隔离 | 见本次提交 |
+| Week 4 Day 6 异步对账、有限重试与死信隔离 | `0015610` |
+| Week 4 Day 7 综合验收 | 本次提交 |
