@@ -163,6 +163,18 @@ public class ReconciliationTestFixture {
         );
         jdbcTemplate.update(
                 """
+                DELETE oe
+                FROM outbox_events oe
+                INNER JOIN reconciliation_jobs rj
+                    ON oe.event_type = 'RECONCILIATION_REQUESTED'
+                   AND oe.aggregate_id = rj.id
+                INNER JOIN users u ON u.id = rj.created_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
                 DELETE rj
                 FROM reconciliation_jobs rj
                 INNER JOIN users u ON u.id = rj.created_by
@@ -188,6 +200,28 @@ public class ReconciliationTestFixture {
                 WHERE a.account_no LIKE ?
                 """,
                 ACCOUNT_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
+                DELETE oe
+                FROM outbox_events oe
+                INNER JOIN import_jobs ij
+                    ON oe.event_type = 'IMPORT_REQUESTED'
+                   AND oe.aggregate_id = ij.id
+                INNER JOIN users u ON u.id = ij.created_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
+                DELETE ijf
+                FROM import_job_files ijf
+                INNER JOIN import_jobs ij ON ij.id = ijf.import_job_id
+                INNER JOIN users u ON u.id = ij.created_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
         );
         jdbcTemplate.update(
                 """

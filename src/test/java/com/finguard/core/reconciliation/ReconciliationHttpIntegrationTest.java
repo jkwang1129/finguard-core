@@ -87,16 +87,16 @@ class ReconciliationHttpIntegrationTest {
                                 .content(body(importJobId))
                                 .with(as(RoleCode.ADMIN))
                 )
-                .andExpect(status().isCreated())
+                .andExpect(status().isAccepted())
                 .andExpect(header().string(
                         "Location",
                         org.hamcrest.Matchers.matchesPattern(
                                 "/api/reconciliation-jobs/[0-9]+"
                         )
                 ))
-                .andExpect(jsonPath("$.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.totalCount").value(1))
-                .andExpect(jsonPath("$.matchedCount").value(1))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.totalCount").value(0))
+                .andExpect(jsonPath("$.matchedCount").value(0))
                 .andExpect(jsonPath("$.duplicateRequest").value(false))
                 .andReturn()
                 .getResponse()
@@ -123,11 +123,8 @@ class ReconciliationHttpIntegrationTest {
                                 .with(as(RoleCode.REVIEWER))
                 )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(1))
-                .andExpect(jsonPath("$.records[0].resultType")
-                        .value("MATCHED"))
-                .andExpect(jsonPath("$.records[0].reasonCode")
-                        .value("EXACT_MATCH"));
+                .andExpect(jsonPath("$.total").value(0))
+                .andExpect(jsonPath("$.records").isEmpty());
 
         mockMvc.perform(
                         post("/api/reconciliation-jobs")

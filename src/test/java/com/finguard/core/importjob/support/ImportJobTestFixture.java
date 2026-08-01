@@ -58,6 +58,28 @@ public class ImportJobTestFixture {
         );
         jdbcTemplate.update(
                 """
+                DELETE oe
+                FROM outbox_events oe
+                INNER JOIN import_jobs ij
+                    ON oe.event_type = 'IMPORT_REQUESTED'
+                   AND oe.aggregate_id = ij.id
+                INNER JOIN users u ON u.id = ij.created_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
+                DELETE ijf
+                FROM import_job_files ijf
+                INNER JOIN import_jobs ij ON ij.id = ijf.import_job_id
+                INNER JOIN users u ON u.id = ij.created_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
                 DELETE ij
                 FROM import_jobs ij
                 INNER JOIN users u ON u.id = ij.created_by

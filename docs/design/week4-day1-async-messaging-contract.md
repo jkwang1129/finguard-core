@@ -160,8 +160,7 @@ Authorization: Bearer <ADMIN JWT>
 {
   "id": 123,
   "status": "PENDING",
-  "duplicateFile": false,
-  "message": "Import job accepted"
+  "duplicateFile": false
 }
 ```
 
@@ -226,7 +225,7 @@ import_job_files
 
 表通过 `import_job_id` 与 `import_jobs.id` 建立 `ON DELETE RESTRICT` 外键。原始文件仍受当前 5 MiB 请求上限约束，因此适合当前单体训练项目；文件内容不放进 RabbitMQ 消息。
 
-后续实现应新增 Flyway 迁移，不得修改已应用的 V1～V6。具体版本号、索引和约束在 Day 2 的数据库设计评审中确认。
+后续实现应新增 Flyway 迁移，不得修改已应用的 V1～V6。具体版本号、索引和约束在 Day 3 的数据库与 Outbox 设计评审中确认。
 
 ### 5.2 选择理由与限制
 
@@ -276,10 +275,30 @@ import_job_files
 - `aggregateId` 分别对应 `import_jobs.id` 或 `reconciliation_jobs.id`；
 - `messageId` 来自 Outbox 记录，发布重试时保持不变；
 - 消费幂等主键优先使用业务任务 ID，不能只依赖 RabbitMQ 自动生成的投递标签；
-- 消息使用持久化投递模式；
+- 消息使用 JSON、`contentType=application/json` 和持久化投递模式；
 - 消息不携带 CSV 字节、JWT、SQL、文件路径或内部异常。
 
-### 6.2 拓扑命名
+### 6.2 可靠发布判定
+
+Publisher Confirm 只能证明 Broker 接受了发布，不能单独证明消息已经路由到队列。Day 3 必须同时启用：
+
+```text
+publisher-confirm-type=correlated
+publisher-returns=true
+RabbitTemplate mandatory=true
+```
+
+Outbox 只有在以下条件同时成立时才能标记为 `SENT`：
+
+```text
+Publisher Confirm ACK
+  + 没有 ReturnedMessage
+  → SENT
+```
+
+Confirm NACK、Confirm 超时、连接异常、exchange 不存在或 mandatory return（例如 `NO_ROUTE`）均视为发布失败；记录安全摘要并保留为可重试状态。不能因为 Broker 对未路由消息发出 ACK 就把事件标记为 `SENT`。
+
+### 6.3 拓扑命名
 
 第一版使用持久化 exchange、queue、binding 和消息：
 
@@ -336,10 +355,17 @@ Outbox Relay 后续负责：
 ```text
 读取 NEW / RETRY Outbox
   → 发布持久化 RabbitMQ 消息
-  → 等待 Publisher Confirm
-  → Confirm 成功：标记 SENT
-  → Confirm 失败或连接异常：增加 attempts，保留 RETRY
+  → 等待 Publisher Confirm 与 mandatory return 结果
+  → Confirm ACK 且没有 return：标记 SENT
+  → NACK、超时、return 或连接异常：增加 attempts，计算 next_attempt_at，保留 RETRY
 ```
+
+Relay 每次只读取有限批次，并按 `next_attempt_at` 选择到期事件；失败后使用有上限的分级退避，禁止在 Broker 故障或路由错误时无延迟忙循环。发布重试始终复用相同 `messageId`。同一事件可能在“Broker 已接收但应用尚未标记 SENT”时被再次发布，这是至少一次投递的预期行为。
+
+Outbox 发布重试和消费者业务重试是两条独立链路：
+
+- Outbox `RETRY`：消息尚未被可靠确认进入目标队列，由 Day 3 Relay 负责；
+- retry queue / DLQ：消息已经进入消费链路，但业务遇到临时或最终失败，由 Day 6 负责。
 
 Outbox 记录必须有稳定的唯一业务事件键，例如：
 
@@ -373,20 +399,24 @@ UNIQUE(event_type, aggregate_id)
 - 业务成功完成；
 - 业务错误已被转换为 `FAILED` 或 `PARTIAL_SUCCESS`；
 - 消息重复且任务已经处于终态；
-- 消息对应的任务不存在，但已经通过安全日志记录并确认不会继续处理。
+
+消息格式非法、事件类型不匹配或消息对应任务不存在时，不能只记录日志后 ACK 丢弃；应拒绝并送入对应 DLQ/隔离路径，保留调查证据。
 
 ## 8. 幂等、重试与死信决策表
 
 | 场景 | 消费动作 | 业务结果 | 消息动作 |
 |---|---|---|---|
 | 首次消费，任务为 `PENDING` | 条件更新为 `PROCESSING` 并执行 | 正常终态 | 事务提交后 ACK |
-| 并发消费，另一消费者已抢到任务 | 不执行第二次业务逻辑 | 保持唯一结果 | ACK 或短暂重试，不能重复入库 |
+| 并发消费，另一消费者已抢到任务 | 不执行第二次业务逻辑；依据处理租约判断活跃或过期 | 保持唯一结果；过期任务进入恢复流程 | 使用 Day 5 锁定的确定性 ACK/恢复策略，不能含糊二选一 |
 | 重复消息，任务已经成功/部分成功/失败 | 直接幂等返回 | 不新增交易和错误 | ACK |
 | 行级业务错误 | 按 Week 3 规则聚合 | `SUCCESS` 或 `PARTIAL_SUCCESS` | ACK |
 | 文件级业务错误 | 记录安全摘要 | `FAILED` | ACK |
 | 临时数据库或网络错误 | 回滚业务事务 | 任务不应被错误标成成功 | NACK，不重新入主队列无限循环 |
 | 超过最大重试次数 | 独立事务标记安全失败 | `FAILED` | 投递 DLQ 并 ACK 原消息 |
 | 数据库已提交但 ACK 失败 | 消息重新投递 | 任务已是终态 | 重复消费后直接 ACK |
+| 消息格式非法或任务不存在 | 不执行业务并记录安全摘要 | 不伪造业务终态 | 拒绝并进入 DLQ/隔离路径 |
+
+Day 4～Day 5 必须在启用真实消费者前锁定 `PROCESSING` 所有权与恢复规则：若 `PROCESSING` 在独立事务中可见，就必须记录可判断的新鲜度/租约信息，并定义消费者宕机后的恢复方式；不能仅凭看到 `PROCESSING` 就永久 ACK，否则可能留下永不结束的任务。
 
 业务唯一键仍然是最终数据防线：
 
@@ -401,9 +431,9 @@ UNIQUE(account_id, source, external_transaction_no)
 | Day | 交付 | 主要验收 |
 |---|---|---|
 | Day 2 | RabbitMQ 依赖、Docker 服务、基础拓扑和连接配置 | 应用可连接 RabbitMQ；exchange、queue、binding 和健康检查存在 |
-| Day 3 | 文件持久化、Outbox 表、任务创建和可靠发布 | 任务、原始文件、Outbox 原子提交；Publisher Confirm 成功/失败可观察 |
+| Day 3 | 文件持久化、Outbox 表、任务创建和可靠发布 | 原子提交；Confirm + mandatory return 判定正确；失败按 next_attempt_at 退避且 messageId 稳定 |
 | Day 4 | 异步导入消费者、手动 ACK和状态推进 | 成功、部分成功、文件失败和系统失败行为正确 |
-| Day 5 | 导入消费幂等、并发抢占和恢复 | 重复消息、ACK 丢失、消费者重启不重复写入 |
+| Day 5 | 导入消费幂等、并发抢占、处理租约和恢复 | 重复消息、ACK 丢失、卡住的 PROCESSING、消费者重启不重复写入 |
 | Day 6 | 对账消费者、重试队列和死信队列 | 临时错误重试；坏消息达到上限进入 DLQ；业务错误不盲目重试 |
 | Day 7 | Week 4 综合验收和周复盘 | 真实 MySQL/JWT/HTTP/RabbitMQ、权限、幂等、重试、DLQ和清理全部通过 |
 
@@ -428,6 +458,7 @@ UNIQUE(account_id, source, external_transaction_no)
 - HTTP `202` 表示接受任务，不表示业务完成；
 - Exchange、Queue、Routing Key 和 Binding 的关系；
 - Publisher Confirm 是生产者到 Broker 的确认；
+- mandatory publisher return 用于识别消息未路由到任何队列；
 - Consumer ACK 是消费者到 Broker 的确认；
 - “至少一次投递”为什么必然要求消费幂等；
 - 为什么数据库事务和 MQ 发布不能直接声称原子；

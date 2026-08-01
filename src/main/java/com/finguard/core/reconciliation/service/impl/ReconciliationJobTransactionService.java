@@ -4,6 +4,10 @@ import com.finguard.core.importjob.entity.ImportJob;
 import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.importjob.mapper.ImportJobMapper;
 import com.finguard.core.importjob.model.ImportJobStatus;
+import com.finguard.core.messaging.outbox.entity.OutboxEvent;
+import com.finguard.core.messaging.outbox.mapper.OutboxEventMapper;
+import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.messaging.outbox.model.OutboxStatus;
 import com.finguard.core.reconciliation.entity.ReconciliationJob;
 import com.finguard.core.reconciliation.entity.ReconciliationResult;
 import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
@@ -39,6 +43,7 @@ public class ReconciliationJobTransactionService {
             "Reconciliation processing failed";
 
     private final ReconciliationJobMapper reconciliationJobMapper;
+    private final OutboxEventMapper outboxEventMapper;
     private final ReconciliationResultMapper reconciliationResultMapper;
     private final ImportJobMapper importJobMapper;
     private final TransactionMapper transactionMapper;
@@ -47,12 +52,14 @@ public class ReconciliationJobTransactionService {
 
     public ReconciliationJobTransactionService(
             ReconciliationJobMapper reconciliationJobMapper,
+            OutboxEventMapper outboxEventMapper,
             ReconciliationResultMapper reconciliationResultMapper,
             ImportJobMapper importJobMapper,
             TransactionMapper transactionMapper,
             ReconciliationMatcher matcher,
             Clock businessClock) {
         this.reconciliationJobMapper = reconciliationJobMapper;
+        this.outboxEventMapper = outboxEventMapper;
         this.reconciliationResultMapper = reconciliationResultMapper;
         this.importJobMapper = importJobMapper;
         this.transactionMapper = transactionMapper;
@@ -86,6 +93,22 @@ public class ReconciliationJobTransactionService {
         if (inserted != 1 || job.getId() == null) {
             throw new IllegalStateException(
                     "Reconciliation job could not be created"
+            );
+        }
+
+        OutboxEvent event = new OutboxEvent();
+        event.setEventType(
+                OutboxEventType.RECONCILIATION_REQUESTED
+        );
+        event.setAggregateId(job.getId());
+        event.setSchemaVersion(1);
+        event.setStatus(OutboxStatus.NEW);
+        event.setAttempts(0);
+        event.setNextAttemptAt(LocalDateTime.now(businessClock));
+        if (outboxEventMapper.insert(event) != 1
+                || event.getId() == null) {
+            throw new IllegalStateException(
+                    "Reconciliation outbox event could not be created"
             );
         }
         return job;

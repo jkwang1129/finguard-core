@@ -22,26 +22,32 @@
 ## 3. 配置与文件
 
 - `pom.xml`：增加 `spring-boot-starter-amqp`。
-- `docker-compose.yml`：增加 RabbitMQ 3.13 management 服务、持久化 volume、5672/15672 端口和 `rabbitmq-diagnostics ping` 健康检查。
+- `docker-compose.yml`：使用固定的 RabbitMQ 4.3.4 management 镜像、独立 `rabbitmq_data_v4` 持久化 volume、仅回环地址暴露的 5672/15672 端口，以及运行状态和本地告警健康检查；升级前的 3.13 数据卷继续保留，不直接删除。
 - `.env.example`：记录 RabbitMQ 主机、端口、虚拟主机、用户名和密码变量；真实 `.env` 仍被 Git 忽略。
 - `src/main/resources/application.yml`：从环境变量读取 RabbitMQ 连接信息，不把凭据写入源码。
 - `src/main/java/com/finguard/core/messaging/config/RabbitMessagingConfiguration.java`：集中声明 Day 2 基础拓扑。
 - `src/test/java/com/finguard/core/messaging/RabbitMessagingTopologyIntegrationTest.java`：验证队列存在以及两条 routing key 能路由到对应队列。
+- `src/test/java/com/finguard/core/messaging/config/RabbitMessagingConfigurationTest.java`：验证 exchange、queue 和 binding 的精确数量、名称、持久化及非自动删除属性。
 
 ## 4. 验收矩阵
 
-- RabbitMQ 容器为 `healthy`，MySQL 容器保持 `healthy`。
-- Spring Boot 聚焦拓扑测试 `2/2` 通过。
-- 完整 `mvn clean test`：`232/232` 通过，失败 `0`，错误 `0`，跳过 `0`。
+- RabbitMQ 4.3.4 容器为 `healthy`，MySQL 容器保持 `healthy`。
+- 加固后的 Spring Boot 聚焦拓扑测试 `4/4` 通过。
+- 完整 `mvn clean test`：`234/234` 通过，失败 `0`，错误 `0`，跳过 `0`。
 - RabbitMQ 实际检查确认两个 direct durable exchange、两个 durable 主队列和两个业务 binding 存在。
+- RabbitMQ 重启后拓扑仍然存在，队列消息和消费者数量均为 `0`。
 - FinGuard 使用临时端口 `18080` 启动后，`GET /actuator/health` 返回 `HTTP 200` 和 `UP`；测试后 18080 已释放。
 - 8080 当前由工作区外的 `cangqiong-server` 占用，未停止或修改该进程。
 - 测试消息已消费，业务队列消息数为 `0`。
 - `git diff --check` 和范围审计在提交前执行。
 
+加固复验确认：错误 routing key 不进入业务队列；测试使用同步 purge，并在该测试上下文关闭未来 listener 的自动启动，避免 Day 4 后消费者抢走拓扑测试消息。旧 `finguard-core_rabbitmq_data` 数据卷未删除，新版本使用 `finguard-core_rabbitmq_data_v4`。
+
 ## 5. 边界与回滚
 
 本日没有新增 Flyway 迁移、Controller、Service、生产者、消费者、Outbox、文件表、Redis、重试、DLQ、自动对账或业务消息 payload。
+
+当前 `RABBITMQ_DEFAULT_USER` 是本地 Docker 开发环境的引导账户；端口已限制为本机访问。Week 6 部署加固时再拆分 Broker 管理账户与最小权限应用账户，本日不引入额外凭据编排。
 
 若需要回滚，只回退本日新增的 AMQP 依赖、RabbitMQ Compose 服务、连接配置、拓扑配置、聚焦测试和文档；不修改 V1～V6，也不删除 RabbitMQ 数据卷中的环境数据。
 

@@ -28,6 +28,7 @@
 | Week 3 Day 7 | 已完成 | Week 3 综合验收、真实 MySQL/JWT/HTTP 验收、清理和周复盘完成 |
 | Week 4 Day 1 | 已完成 | 异步导入/对账消息契约、文件持久化方案、Outbox、Confirm/ACK、幂等、重试和死信边界已锁定 |
 | Week 4 Day 2 | 已完成 | RabbitMQ 依赖、Docker 服务、连接配置、导入/对账基础拓扑、真实连接和健康验收完成 |
+| Week 4 Day 3 | 已完成 | V7、原始文件持久化、Outbox、202 异步受理、Confirm/return 与发布退避已完成真实验收 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -707,7 +708,7 @@
     → 命中已有 fileHash：返回原任务，不创建新任务、不重复入队
     → 未命中：一个数据库事务内创建 PENDING、保存原始文件、写入 IMPORT_REQUESTED Outbox
     → 返回 202 + Location
-    → Outbox Relay 发布消息并等待 Publisher Confirm
+    → Outbox Relay 发布消息并等待 Publisher Confirm 与 mandatory return
     → 导入消费者条件式推进 PENDING → PROCESSING
     → 复用 Week 3 解析/校验/入库逻辑
     → 事务提交后手动 ACK
@@ -730,8 +731,8 @@
   2. 锁定首次受理 `202 + Location`、重复请求复用原任务、任务查询轮询和权限矩阵。
   3. 解决当前原始 CSV 只在 HTTP 内存中的问题，确定独立 `import_job_files` 表保存原始字节的方案。
   4. 定义导入/对账消息字段、`schemaVersion`、稳定 `messageId`、exchange、queue、routing key、重试队列和 DLQ。
-  5. 定义任务创建事务、Outbox 发布事务、消费者业务事务和手动 ACK 的边界。
-  6. 区分业务错误、临时系统错误、重复消息、ACK 失败和超过次数后的死信处理。
+  5. 定义任务创建事务、Outbox 发布事务、Confirm + mandatory return、消费者业务事务和手动 ACK 的边界。
+  6. 区分 Outbox 发布重试与消费者业务重试，并定义业务错误、临时系统错误、重复消息、ACK 失败和超过次数后的死信处理。
   7. 登记 Day 2～Day 7 的实现顺序、测试矩阵、回滚边界和面试解释要点。
 - **任务**：
   - [x] 新增 `docs/design/week4-day1-async-messaging-contract.md`。
@@ -740,14 +741,15 @@
   - [x] 确定原始 CSV 独立持久化方案，明确后续新增迁移、禁止修改 V1～V6。
   - [x] 定义只携带任务 ID 的消息格式、事件类型、版本、稳定消息 ID和持久化投递要求。
   - [x] 定义持久化 exchange、主队列、两级重试队列、DLQ 和禁止无限 requeue 的边界。
-  - [x] 区分 Publisher Confirm、消费者手动 ACK、Outbox、业务幂等和数据库唯一键的职责。
-  - [x] 定义重复消费、并发消费、数据库提交后 ACK 失败、临时异常和业务异常的处理矩阵。
+  - [x] 区分 Publisher Confirm、mandatory return、消费者手动 ACK、Outbox、业务幂等和数据库唯一键的职责。
+  - [x] 定义 Outbox 退避、重复消费、并发消费、数据库提交后 ACK 失败、临时异常、非法消息和业务异常的处理矩阵。
   - [x] 登记 Day 2～Day 7 任务顺序、学习重点、验收标准和回滚方案。
 - **关键设计决定**：
   - 首次异步导入和对账请求返回 `202 Accepted`，任务详情通过现有 GET 接口轮询；重复文件和重复对账请求仍复用原任务，不重新创建业务任务。
   - 原始 CSV 不放进 RabbitMQ 消息；新增独立 `import_job_files` 表保存原始字节，后续通过新的 Flyway 迁移实现。
-  - 任务、原始文件和 Outbox 事件在同一 MySQL 事务内提交；Outbox Relay 发布持久化消息并等待 Publisher Confirm。
-  - 采用至少一次投递，允许消息重复；消费者通过任务状态条件更新、业务幂等和数据库唯一键避免重复交易/结果。
+  - 任务、原始文件和 Outbox 事件在同一 MySQL 事务内提交；Outbox Relay 发布持久化消息，只有 Confirm ACK 且没有 mandatory return 才标记 `SENT`。
+  - Outbox 发布失败按 `next_attempt_at` 有限批量退避，且重试保持稳定 `messageId`；它与消费者 retry queue/DLQ 是两条独立链路。
+  - 采用至少一次投递，允许消息重复；消费者通过任务状态条件更新、处理租约、业务幂等和数据库唯一键避免重复交易/结果及卡死任务。
   - 业务错误正常落库并 ACK；临时系统错误进入有限重试；超过最大次数后进入 DLQ，并用独立事务把仍处理中的任务标记为安全失败。
   - Week 4 不把上传和对账自动绑定，保留 Week 3 的独立手动对账入口。
 - **关键文件**：
@@ -756,11 +758,11 @@
   - 后续实现预计涉及 `pom.xml`、`docker-compose.yml`、`application.yml`、`importjob`、`reconciliation` 和新的 Flyway 迁移；本日不修改这些代码文件。
 - **验收**：
   - [x] 设计文档覆盖当前同步基线、异步导入/对账流程、HTTP 契约、状态机和权限边界。
-  - [x] 设计文档覆盖原始文件持久化、消息字段、拓扑、Outbox、Publisher Confirm、手动 ACK、幂等、重试和 DLQ。
-  - [x] 设计文档覆盖业务错误/系统错误/重复消息/ACK 失败/死信的决策表，以及 Day 2～Day 7 验收矩阵。
+  - [x] 设计文档覆盖原始文件持久化、消息字段、拓扑、Outbox、Publisher Confirm + mandatory return、手动 ACK、幂等、重试和 DLQ。
+  - [x] 设计文档覆盖发布退避、业务错误/系统错误/非法消息/重复消息/ACK 失败/死信的决策表，以及 Day 2～Day 7 验收矩阵。
   - [x] 设计边界确认没有提前实现 RabbitMQ、Redis、风险、审核、审计、监控或数据库迁移。
   - [x] `git diff --check` 通过；完整 `mvn clean test` 保持 Week 3 基线通过，详见后续验收记录。
-- **学习重点**：HTTP `202` 与异步任务、Exchange/Queue/Routing Key/Binding、Publisher Confirm 与 Consumer ACK、至少一次投递、Outbox、消费者幂等、事务边界、有限重试和死信队列。
+- **学习重点**：HTTP `202` 与异步任务、Exchange/Queue/Routing Key/Binding、Publisher Confirm、mandatory return 与 Consumer ACK、至少一次投递、Outbox、消费者幂等、事务边界、有限重试和死信队列。
 - **回滚**：本日只有设计文档和任务清单变更；若设计评审否决异步契约，可删除新增设计文档并回退本节，不涉及 Java 代码、数据库数据、Flyway checksum 或 RabbitMQ 环境。后续数据库变更只能新增迁移，不能修改 V1～V6。
 - **验收结论**：Day 1 设计文档和任务清单已完成，异步请求语义、原始文件持久化、消息契约、可靠投递和失败处理边界已锁定；实现从 Day 2 开始。
 - **提交**：`docs: design week4 day1 async messaging contract`
@@ -794,16 +796,16 @@
   - 重试队列和死信队列留给 Day 6。
 - **任务**：
   - [x] 增加 `spring-boot-starter-amqp`。
-  - [x] 增加 RabbitMQ Docker 服务、持久化 volume、管理端口和健康检查。
+  - [x] 增加固定 RabbitMQ 4.3.4 Docker 服务、独立持久化 volume、仅本机暴露的管理端口和健康检查；保留旧 3.13 数据卷。
   - [x] 增加连接配置及 `.env.example` 环境变量模板。
   - [x] 声明导入/对账 exchange、主队列和 binding。
-  - [x] 增加真实连接、队列存在和 routing key 路由测试。
+  - [x] 增加真实连接、持久化拓扑、正确/错误 routing key 路由和同步清理测试，并隔离未来 listener。
   - [x] 完成 RabbitMQ/MySQL/HTTP 验收、测试数据清理和端口清理。
 - **验收**：
-  - [x] RabbitMQ 和 MySQL 容器均为 `healthy`。
-  - [x] 聚焦测试 `2/2` 通过。
-  - [x] `mvn clean test` 为 `232/232`，无失败、错误或跳过。
-  - [x] RabbitMQ 实际 exchange、queue、binding 检查通过，测试消息清零。
+  - [x] RabbitMQ 4.3.4 和 MySQL 容器均为 `healthy`，RabbitMQ 仅绑定本机端口。
+  - [x] 加固后的聚焦测试 `4/4` 通过。
+  - [x] `mvn clean test` 为 `234/234`，无失败、错误或跳过。
+  - [x] RabbitMQ 实际 exchange、queue、binding 检查及 Broker 重启持久化通过，测试消息和消费者清零。
   - [x] FinGuard 临时端口 `18080` 的 `/actuator/health` 返回 `HTTP 200 UP`，端口已释放。
   - [x] 8080 的无关 `cangqiong-server` 进程未被停止或修改。
   - [x] `git diff --check` 通过，变更范围未提前进入 Day 3～Day 6。
@@ -812,6 +814,38 @@
 - **验收结论**：RabbitMQ 基础设施和导入/对账基础拓扑已可运行、可连接、可路由，后续 Day 3 可在其上实现文件持久化和 Outbox。
 - **提交**：`feat: add RabbitMQ messaging foundation`
 
+### Week 4 Day 3：文件持久化、Outbox 与可靠发布
+
+- **状态**：已完成
+- **业务目标**：让导入/对账 HTTP 请求在一个 MySQL 事务内可靠保存 `PENDING` 任务及消息意图并返回 `202`，再由 Relay 通过 Publisher Confirm + mandatory return 可靠投递到 RabbitMQ。
+- **范围边界**：
+  - 实现 V7、`import_job_files`、`outbox_events`、异步受理、JSON 消息、持久化发布、确认/退回判定和发布退避。
+  - 保留 Week 3 处理逻辑供后续消费者复用，但 HTTP 不再同步推进任务。
+  - 不实现消费者、手动 ACK、消费重试/DLQ、Redis、风险、审核、审计、监控或前端。
+- **执行顺序**：
+  1. 完成 Day 3 设计与任务边界评审。
+  2. 新增 V7 和持久层，验证任务、文件、Outbox 原子写入与数据库约束。
+  3. 将导入/对账首次请求改为 `202 + Location + PENDING`，验证重复请求不重复建事件。
+  4. 实现消息契约、Relay、correlated confirm、mandatory return 和发布失败退避。
+  5. 完成聚焦测试、完整回归、真实 JWT/HTTP/MySQL/RabbitMQ/失败路径验收和清理。
+- **任务**：
+  - [x] 新增 `docs/design/week4-day3-outbox-publishing-design.md`，锁定事务、表、状态机、消息、失败和回滚边界。
+  - [x] 新增 V7、文件/Outbox Entity、Mapper 与数据库约束测试。
+  - [x] 原子创建导入任务、原始文件和导入事件；原子创建对账任务和对账事件。
+  - [x] 首次导入/对账改为 `202/PENDING`，重复请求保持 `200` 且不重复入队。
+  - [x] 实现持久化 JSON 消息、Relay、Confirm + mandatory return 和发布退避。
+  - [x] 完成聚焦/全量测试、真实验收、清理、范围审计和提交前检查。
+- **关键文件**：
+  - `docs/design/week4-day3-outbox-publishing-design.md`
+  - `src/main/resources/db/migration/V7__create_import_file_and_outbox_tables.sql`
+  - `src/main/java/com/finguard/core/messaging/outbox/`
+  - `src/main/java/com/finguard/core/importjob/`
+  - `src/main/java/com/finguard/core/reconciliation/`
+- **验收**：Day 3 聚焦测试 7/7、完整 `mvn clean test` 242/242 通过；真实 ADMIN/REVIEWER JWT + HTTP 覆盖导入/对账 `202/200/403/200`，MySQL 中任务保持 `PENDING`、文件字节完整、两类 Outbox 为 `SENT`，RabbitMQ 两个主队列均收到持久化消息；失败发布进入 `RETRY` 并退避；验收数据、消息和 18080 端口全部清理。
+- **学习重点**：Transactional Outbox、至少一次发布、Publisher Confirm、mandatory return、稳定消息 ID、发布退避、HTTP 202 和数据库真源。
+- **回滚**：Java/配置可回退；已应用 V7 不得修改或删除，只能新增迁移演进，数据卷不得作为回滚手段删除。
+- **提交**：`feat: add reliable outbox publishing`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -819,7 +853,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1 异步消息契约和 Day 2 RabbitMQ 基础设施已完成；后续实现文件持久化、Outbox、异步消费者、Publisher Confirm、手动 ACK、消费幂等、重试和死信队列 |
+| Week 4 | Day 1 异步消息契约、Day 2 RabbitMQ 基础设施、Day 3 文件持久化/Outbox/异步受理/可靠发布已完成；后续实现消费者、手动 ACK、消费幂等、重试和死信队列 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -850,4 +884,6 @@
 | Week 3 Day 5 同步导入 | `ce5e020` |
 | Week 3 Day 6 同步对账 | `20626dd` |
 | Week 3 Day 7 综合验收 | `e404682` |
-| Week 4 Day 1 异步消息契约设计 | 本次提交 |
+| Week 4 Day 1 异步消息契约设计 | `996c013` |
+| Week 4 Day 2 RabbitMQ 基础设施 | `7f77980` |
+| Week 4 Day 3 Outbox 可靠发布 | 本次提交 |

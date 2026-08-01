@@ -14,6 +14,8 @@ spring:
     password: "${RABBITMQ_PASSWORD}"
     virtual-host: "${RABBITMQ_VIRTUAL_HOST:/}"
     connection-timeout: 5s
+    publisher-confirm-type: correlated
+    publisher-returns: true
   servlet:
     multipart:
       max-file-size: 5MB
@@ -21,6 +23,12 @@ spring:
       file-size-threshold: 5MB
 
 finguard:
+  messaging:
+    outbox:
+      enabled: "${FINGUARD_OUTBOX_ENABLED:true}"
+      fixed-delay-ms: "${FINGUARD_OUTBOX_FIXED_DELAY_MS:1000}"
+      batch-size: "${FINGUARD_OUTBOX_BATCH_SIZE:50}"
+      confirm-timeout: "${FINGUARD_OUTBOX_CONFIRM_TIMEOUT:5s}"
   auth:
     bootstrap:
       enabled: "${FINGUARD_AUTH_BOOTSTRAP_ENABLED:false}"

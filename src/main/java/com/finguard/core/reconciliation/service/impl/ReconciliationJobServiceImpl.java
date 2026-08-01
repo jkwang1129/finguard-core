@@ -60,22 +60,6 @@ public class ReconciliationJobServiceImpl
             return toResponse(raced, true);
         }
 
-        transactionService.markProcessing(created.getId());
-        try {
-            transactionService.processAndComplete(
-                    created.getId(),
-                    importJobId
-            );
-        } catch (RuntimeException exception) {
-            try {
-                transactionService.markProcessingFailed(
-                        created.getId()
-                );
-            } catch (RuntimeException recoveryException) {
-                exception.addSuppressed(recoveryException);
-            }
-            throw exception;
-        }
         return toResponse(
                 transactionService.requireById(created.getId()),
                 false

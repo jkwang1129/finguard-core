@@ -34,7 +34,7 @@ services:
     stop_grace_period: 30s
 
   rabbitmq:
-    image: rabbitmq:3.13-management
+    image: rabbitmq:4.3.4-management
     container_name: finguard-rabbitmq
     restart: unless-stopped
 
@@ -45,16 +45,16 @@ services:
       TZ: Asia/Shanghai
 
     ports:
-      - "${RABBITMQ_PORT:-5672}:5672"
-      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
 
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_data_v4:/var/lib/rabbitmq
 
     healthcheck:
       test:
         - CMD-SHELL
-        - rabbitmq-diagnostics -q ping
+        - rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
       interval: 10s
       timeout: 5s
       retries: 10
@@ -64,4 +64,4 @@ services:
 
 volumes:
   mysql_data:
-  rabbitmq_data:
+  rabbitmq_data_v4:

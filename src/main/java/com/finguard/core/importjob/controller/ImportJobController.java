@@ -59,7 +59,7 @@ public class ImportJobController {
             return ResponseEntity.ok(response);
         }
         return ResponseEntity
-                .status(HttpStatus.CREATED)
+                .status(HttpStatus.ACCEPTED)
                 .header(
                         HttpHeaders.LOCATION,
                         URI.create(

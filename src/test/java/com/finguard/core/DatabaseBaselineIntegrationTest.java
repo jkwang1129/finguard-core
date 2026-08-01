@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("6");
+        assertThat(current.getVersion().getVersion()).isEqualTo("7");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -77,12 +77,67 @@ class DatabaseBaselineIntegrationTest {
             statement.setString(7, "import_row_errors");
             statement.setString(8, "reconciliation_jobs");
             statement.setString(9, "reconciliation_results");
+            statement.setString(10, "import_job_files");
+            statement.setString(11, "outbox_events");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(9);
+                assertThat(resultSet.getInt(1)).isEqualTo(11);
             }
         }
+    }
+
+    @Test
+    void outboxSchemaShouldEnforceFileAndEventInvariants() {
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+                new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT delete_rule
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND constraint_name = 'fk_import_job_files_job'
+                """,
+                String.class
+        )).isEqualTo("RESTRICT");
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'outbox_events'
+                  AND index_name = 'uk_outbox_events_type_aggregate'
+                  AND non_unique = 0
+                """,
+                Integer.class
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'outbox_events'
+                  AND index_name = 'idx_outbox_events_due'
+                """,
+                Integer.class
+        )).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND constraint_type = 'CHECK'
+                  AND constraint_name IN (
+                      'chk_import_job_files_length',
+                      'chk_outbox_events_type',
+                      'chk_outbox_events_schema',
+                      'chk_outbox_events_status',
+                      'chk_outbox_events_state'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(5);
     }
 
     @Test

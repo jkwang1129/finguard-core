@@ -5,7 +5,10 @@ import com.finguard.core.importjob.dto.ImportRowErrorQueryRequest;
 import com.finguard.core.importjob.model.ImportFileErrorCode;
 import com.finguard.core.importjob.model.ImportJobStatus;
 import com.finguard.core.importjob.model.ImportRowErrorCode;
+import com.finguard.core.importjob.parser.CsvImportFileParser;
+import com.finguard.core.importjob.parser.PreparedImportFile;
 import com.finguard.core.importjob.service.ImportJobService;
+import com.finguard.core.importjob.service.impl.ImportJobTransactionService;
 import com.finguard.core.importjob.support.ImportJobTestFixture;
 import com.finguard.core.importjob.vo.ImportJobResponse;
 import com.finguard.core.importjob.vo.ImportRowErrorResponse;
@@ -37,6 +40,12 @@ class SyncImportJobIntegrationTest {
 
     @Autowired
     private ImportJobService importJobService;
+
+    @Autowired
+    private ImportJobTransactionService transactionService;
+
+    @Autowired
+    private CsvImportFileParser fileParser;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -71,7 +80,7 @@ class SyncImportJobIntegrationTest {
                 row(accountNo, token + "-2", "EXPENSE", "20.50")
         );
 
-        ImportJobResponse created = importJobService.upload(
+        ImportJobResponse created = acceptAndProcess(
                 "success.csv",
                 bytes,
                 ownerId
@@ -118,7 +127,7 @@ class SyncImportJobIntegrationTest {
     @Test
     void shouldPersistPartialAndAllRejectedResultsWithStableErrors() {
         String token = shortToken();
-        ImportJobResponse partial = importJobService.upload(
+        ImportJobResponse partial = acceptAndProcess(
                 "partial.csv",
                 csv(
                         row(accountNo, token + "-OK", "INCOME", "10.00"),
@@ -149,7 +158,7 @@ class SyncImportJobIntegrationTest {
         assertThat(errors.records().get(0).errorCode())
                 .isEqualTo(ImportRowErrorCode.ACCOUNT_NOT_FOUND);
 
-        ImportJobResponse failed = importJobService.upload(
+        ImportJobResponse failed = acceptAndProcess(
                 "all-rejected.csv",
                 csv(row(
                         "MISSING_ACCOUNT",
@@ -170,7 +179,7 @@ class SyncImportJobIntegrationTest {
     void shouldCreateFailedTaskForFileLevelErrorWithoutTransactions() {
         String invalid = "wrong,header\nvalue,value\n";
 
-        ImportJobResponse response = importJobService.upload(
+        ImportJobResponse response = acceptAndProcess(
                 "invalid-header.csv",
                 invalid.getBytes(StandardCharsets.UTF_8),
                 ownerId
@@ -233,7 +242,7 @@ class SyncImportJobIntegrationTest {
         );
 
         for (FileFailureCase failureCase : cases) {
-            ImportJobResponse response = importJobService.upload(
+            ImportJobResponse response = acceptAndProcess(
                     failureCase.fileName(),
                     failureCase.bytes(),
                     ownerId
@@ -268,7 +277,7 @@ class SyncImportJobIntegrationTest {
             ));
         }
 
-        ImportJobResponse response = importJobService.upload(
+        ImportJobResponse response = acceptAndProcess(
                 "batch.csv",
                 csv(rows.toArray(String[]::new)),
                 ownerId
@@ -308,7 +317,7 @@ class SyncImportJobIntegrationTest {
                 transactionNo
         );
 
-        ImportJobResponse firstCsv = importJobService.upload(
+        ImportJobResponse firstCsv = acceptAndProcess(
                 "same-key.csv",
                 csv(row(
                         accountNo,
@@ -346,7 +355,7 @@ class SyncImportJobIntegrationTest {
                 + accountNo + "," + transactionNo
                 + ",INCOME,10.00,2026-07-31 09:00:00,"
                 + "changed bytes\n").getBytes(StandardCharsets.UTF_8);
-        ImportJobResponse secondCsv = importJobService.upload(
+        ImportJobResponse secondCsv = acceptAndProcess(
                 "same-key-changed.csv",
                 changedBytes,
                 ownerId
@@ -371,7 +380,7 @@ class SyncImportJobIntegrationTest {
         try {
             Future<ImportJobResponse> first = executor.submit(() -> {
                 barrier.await();
-                return importJobService.upload(
+                return acceptAndProcess(
                         "concurrent-a.csv",
                         bytes,
                         ownerId
@@ -379,7 +388,7 @@ class SyncImportJobIntegrationTest {
             });
             Future<ImportJobResponse> second = executor.submit(() -> {
                 barrier.await();
-                return importJobService.upload(
+                return acceptAndProcess(
                         "concurrent-b.csv",
                         bytes,
                         ownerId
@@ -421,6 +430,32 @@ class SyncImportJobIntegrationTest {
                 value,
                 "Week 3 Day 5 " + value
         );
+    }
+
+    private ImportJobResponse acceptAndProcess(
+            String fileName,
+            byte[] bytes,
+            Long createdBy) {
+        ImportJobResponse accepted = importJobService.upload(
+                fileName,
+                bytes,
+                createdBy
+        );
+        if (accepted.duplicateFile()) {
+            return accepted;
+        }
+        PreparedImportFile prepared = fileParser.prepare(fileName, bytes);
+        transactionService.markProcessing(accepted.id());
+        try {
+            transactionService.processAndComplete(
+                    accepted.id(),
+                    prepared
+            );
+        } catch (RuntimeException exception) {
+            transactionService.markProcessingFailed(accepted.id());
+            throw exception;
+        }
+        return importJobService.getById(accepted.id());
     }
 
     private byte[] csv(String... rows) {

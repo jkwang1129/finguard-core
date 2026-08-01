@@ -4,7 +4,10 @@ import com.finguard.core.importjob.mapper.ImportRowErrorMapper;
 import com.finguard.core.importjob.model.ImportFileErrorCode;
 import com.finguard.core.importjob.model.ImportJobStatus;
 import com.finguard.core.importjob.model.ImportRowErrorCode;
+import com.finguard.core.importjob.parser.CsvImportFileParser;
+import com.finguard.core.importjob.parser.PreparedImportFile;
 import com.finguard.core.importjob.service.ImportJobService;
+import com.finguard.core.importjob.service.impl.ImportJobTransactionService;
 import com.finguard.core.importjob.support.ImportJobTestFixture;
 import com.finguard.core.importjob.validation.CsvImportRowValidator;
 import com.finguard.core.importjob.validation.ImportFileValidationResult;
@@ -44,6 +47,12 @@ class SyncImportRecoveryIntegrationTest {
 
     @Autowired
     private ImportJobService importJobService;
+
+    @Autowired
+    private ImportJobTransactionService transactionService;
+
+    @Autowired
+    private CsvImportFileParser fileParser;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -99,7 +108,7 @@ class SyncImportRecoveryIntegrationTest {
 
     @Test
     void shouldDowngradeWriteTimeUniqueRaceToRowError() {
-        ImportJobResponse original = importJobService.upload(
+        ImportJobResponse original = acceptAndProcess(
                 "race-original.csv",
                 csv("EXT-RACE"),
                 ownerId
@@ -121,7 +130,7 @@ class SyncImportRecoveryIntegrationTest {
                 List.of()
         )).when(rowValidator).validate(any());
 
-        ImportJobResponse raced = importJobService.upload(
+        ImportJobResponse raced = acceptAndProcess(
                 "race-second.csv",
                 csv("EXT-DIFFERENT-BYTES"),
                 ownerId
@@ -167,7 +176,7 @@ class SyncImportRecoveryIntegrationTest {
                 + "2026-07-31 09:00:00,invalid\n")
                 .getBytes(StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> importJobService.upload(
+        assertThatThrownBy(() -> acceptAndProcess(
                 "rollback.csv",
                 partial,
                 ownerId
@@ -214,6 +223,29 @@ class SyncImportRecoveryIntegrationTest {
                 + accountNo + "," + externalTransactionNo
                 + ",INCOME,10.00,2026-07-31 09:00:00,test\n")
                 .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private ImportJobResponse acceptAndProcess(
+            String fileName,
+            byte[] bytes,
+            Long createdBy) {
+        ImportJobResponse accepted = importJobService.upload(
+                fileName,
+                bytes,
+                createdBy
+        );
+        PreparedImportFile prepared = fileParser.prepare(fileName, bytes);
+        transactionService.markProcessing(accepted.id());
+        try {
+            transactionService.processAndComplete(
+                    accepted.id(),
+                    prepared
+            );
+        } catch (RuntimeException exception) {
+            transactionService.markProcessingFailed(accepted.id());
+            throw exception;
+        }
+        return importJobService.getById(accepted.id());
     }
 
     private void clean() {

@@ -1,10 +1,12 @@
 package com.finguard.core.importjob.service.impl;
 
 import com.finguard.core.importjob.entity.ImportJob;
+import com.finguard.core.importjob.entity.ImportJobFile;
 import com.finguard.core.importjob.entity.ImportRowError;
 import com.finguard.core.importjob.exception.ImportFileParseException;
 import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.importjob.mapper.ImportJobMapper;
+import com.finguard.core.importjob.mapper.ImportJobFileMapper;
 import com.finguard.core.importjob.mapper.ImportRowErrorMapper;
 import com.finguard.core.importjob.model.ImportFileErrorCode;
 import com.finguard.core.importjob.model.ImportJobStatus;
@@ -16,6 +18,10 @@ import com.finguard.core.importjob.validation.CsvImportRowValidator;
 import com.finguard.core.importjob.validation.ImportFileValidationResult;
 import com.finguard.core.importjob.validation.ImportRowValidationError;
 import com.finguard.core.importjob.validation.ValidatedImportRow;
+import com.finguard.core.messaging.outbox.entity.OutboxEvent;
+import com.finguard.core.messaging.outbox.mapper.OutboxEventMapper;
+import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.messaging.outbox.model.OutboxStatus;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.mapper.TransactionMapper;
 import org.springframework.dao.DuplicateKeyException;
@@ -41,6 +47,8 @@ public class ImportJobTransactionService {
             "Import processing failed";
 
     private final ImportJobMapper importJobMapper;
+    private final ImportJobFileMapper importJobFileMapper;
+    private final OutboxEventMapper outboxEventMapper;
     private final ImportRowErrorMapper importRowErrorMapper;
     private final TransactionMapper transactionMapper;
     private final CsvImportFileParser fileParser;
@@ -49,12 +57,16 @@ public class ImportJobTransactionService {
 
     public ImportJobTransactionService(
             ImportJobMapper importJobMapper,
+            ImportJobFileMapper importJobFileMapper,
+            OutboxEventMapper outboxEventMapper,
             ImportRowErrorMapper importRowErrorMapper,
             TransactionMapper transactionMapper,
             CsvImportFileParser fileParser,
             CsvImportRowValidator rowValidator,
             Clock businessClock) {
         this.importJobMapper = importJobMapper;
+        this.importJobFileMapper = importJobFileMapper;
+        this.outboxEventMapper = outboxEventMapper;
         this.importRowErrorMapper = importRowErrorMapper;
         this.transactionMapper = transactionMapper;
         this.fileParser = fileParser;
@@ -88,6 +100,32 @@ public class ImportJobTransactionService {
         if (inserted != 1 || importJob.getId() == null) {
             throw new IllegalStateException(
                     "Import job could not be created"
+            );
+        }
+
+        ImportJobFile importJobFile = new ImportJobFile();
+        importJobFile.setImportJobId(importJob.getId());
+        importJobFile.setContent(preparedFile.originalBytes());
+        importJobFile.setContentLength(
+                Math.toIntExact(preparedFile.fileSizeBytes())
+        );
+        if (importJobFileMapper.insert(importJobFile) != 1) {
+            throw new IllegalStateException(
+                    "Import file could not be persisted"
+            );
+        }
+
+        OutboxEvent event = new OutboxEvent();
+        event.setEventType(OutboxEventType.IMPORT_REQUESTED);
+        event.setAggregateId(importJob.getId());
+        event.setSchemaVersion(1);
+        event.setStatus(OutboxStatus.NEW);
+        event.setAttempts(0);
+        event.setNextAttemptAt(LocalDateTime.now(businessClock));
+        if (outboxEventMapper.insert(event) != 1
+                || event.getId() == null) {
+            throw new IllegalStateException(
+                    "Import outbox event could not be created"
             );
         }
         return importJob;

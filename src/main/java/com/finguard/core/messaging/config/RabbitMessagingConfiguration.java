@@ -1,5 +1,6 @@
 package com.finguard.core.messaging.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -9,6 +10,8 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 
 /**
  * Declares the durable business topology used by the asynchronous flows.
@@ -60,5 +63,20 @@ public class RabbitMessagingConfiguration {
                 reconciliationExchange,
                 reconciliationQueue,
                 reconciliationBinding);
+    }
+
+    @Bean
+    public Jackson2JsonMessageConverter rabbitJsonMessageConverter(
+            ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
+    }
+
+    @Bean
+    public RabbitTemplateCustomizer reliableRabbitTemplateCustomizer(
+            Jackson2JsonMessageConverter messageConverter) {
+        return template -> {
+            template.setMessageConverter(messageConverter);
+            template.setMandatory(true);
+        };
     }
 }

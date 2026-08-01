@@ -93,7 +93,7 @@ class SyncImportHttpIntegrationTest {
                                 .file(file)
                                 .with(as(RoleCode.ADMIN))
                 )
-                .andExpect(status().isCreated())
+                .andExpect(status().isAccepted())
                 .andExpect(header().string(
                         "Location",
                         org.hamcrest.Matchers.matchesPattern(
@@ -102,9 +102,9 @@ class SyncImportHttpIntegrationTest {
                 ))
                 .andExpect(jsonPath("$.originalFileName")
                         .value("transactions.csv"))
-                .andExpect(jsonPath("$.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.totalRows").value(1))
-                .andExpect(jsonPath("$.successRows").value(1))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.totalRows").value(0))
+                .andExpect(jsonPath("$.successRows").value(0))
                 .andExpect(jsonPath("$.duplicateFile").value(false))
                 .andReturn()
                 .getResponse()

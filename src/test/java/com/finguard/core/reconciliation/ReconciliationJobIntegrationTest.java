@@ -10,6 +10,7 @@ import com.finguard.core.reconciliation.model.ReconciliationJobStatus;
 import com.finguard.core.reconciliation.model.ReconciliationReasonCode;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.reconciliation.service.ReconciliationJobService;
+import com.finguard.core.reconciliation.service.impl.ReconciliationJobTransactionService;
 import com.finguard.core.reconciliation.support.ReconciliationTestFixture;
 import com.finguard.core.reconciliation.vo.ReconciliationJobResponse;
 import com.finguard.core.reconciliation.vo.ReconciliationResultResponse;
@@ -52,6 +53,9 @@ class ReconciliationJobIntegrationTest {
     private ReconciliationJobService reconciliationJobService;
 
     @Autowired
+    private ReconciliationJobTransactionService transactionService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @MockitoSpyBean
@@ -79,7 +83,7 @@ class ReconciliationJobIntegrationTest {
         Scenario scenario = createFourTypeScenario();
 
         ReconciliationJobResponse created =
-                reconciliationJobService.create(
+                acceptAndProcess(
                         scenario.importJobId(),
                         scenario.ownerId()
                 );
@@ -207,6 +211,16 @@ class ReconciliationJobIntegrationTest {
                     """,
                     Integer.class,
                     responses.get(0).id()
+            )).isZero();
+            assertThat(jdbcTemplate.queryForObject(
+                    """
+                    SELECT COUNT(*)
+                    FROM outbox_events
+                    WHERE event_type = 'RECONCILIATION_REQUESTED'
+                      AND aggregate_id = ?
+                    """,
+                    Integer.class,
+                    responses.get(0).id()
             )).isEqualTo(1);
         } finally {
             executor.shutdownNow();
@@ -222,7 +236,7 @@ class ReconciliationJobIntegrationTest {
                 0
         );
 
-        assertThatThrownBy(() -> reconciliationJobService.create(
+        assertThatThrownBy(() -> acceptAndProcess(
                 importJobId,
                 ownerId
         )).isInstanceOf(
@@ -249,7 +263,7 @@ class ReconciliationJobIntegrationTest {
                         .<List<ReconciliationResult>>any()
         );
 
-        assertThatThrownBy(() -> reconciliationJobService.create(
+        assertThatThrownBy(() -> acceptAndProcess(
                 scenario.importJobId(),
                 scenario.ownerId()
         )).isInstanceOf(DataAccessResourceFailureException.class);
@@ -322,7 +336,7 @@ class ReconciliationJobIntegrationTest {
         }
 
         ReconciliationJobResponse response =
-                reconciliationJobService.create(importJobId, ownerId);
+                acceptAndProcess(importJobId, ownerId);
 
         assertThat(response.totalCount()).isEqualTo(rowCount);
         assertThat(response.matchedCount()).isEqualTo(rowCount);
@@ -449,6 +463,27 @@ class ReconciliationJobIntegrationTest {
                 TransactionSource.MANUAL
         );
         return new Scenario(ownerId, importJobId);
+    }
+
+    private ReconciliationJobResponse acceptAndProcess(
+            Long importJobId,
+            Long createdBy) {
+        ReconciliationJobResponse accepted =
+                reconciliationJobService.create(importJobId, createdBy);
+        if (accepted.duplicateRequest()) {
+            return accepted;
+        }
+        transactionService.markProcessing(accepted.id());
+        try {
+            transactionService.processAndComplete(
+                    accepted.id(),
+                    importJobId
+            );
+        } catch (RuntimeException exception) {
+            transactionService.markProcessingFailed(accepted.id());
+            throw exception;
+        }
+        return reconciliationJobService.getById(accepted.id());
     }
 
     private Scenario createOneExactScenario() {
