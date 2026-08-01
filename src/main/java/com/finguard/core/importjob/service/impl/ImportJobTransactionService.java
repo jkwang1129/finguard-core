@@ -141,6 +141,23 @@ public class ImportJobTransactionService {
     }
 
     @Transactional
+    public void processPending(Long importJobId) {
+        if (importJobId == null || importJobId <= 0) {
+            throw new IllegalArgumentException(
+                    "importJobId must be a positive number"
+            );
+        }
+        ImportJob importJob = requireById(importJobId);
+        PreparedImportFile preparedFile = restorePreparedFile(importJob);
+        int updated = importJobMapper.markProcessing(
+                importJobId,
+                LocalDateTime.now(businessClock)
+        );
+        requireSingleStateUpdate(updated, importJobId);
+        processAndComplete(importJobId, preparedFile);
+    }
+
+    @Transactional
     public void processAndComplete(
             Long importJobId,
             PreparedImportFile preparedFile) {
@@ -233,6 +250,37 @@ public class ImportJobTransactionService {
             );
         }
         return successRows;
+    }
+
+    private PreparedImportFile restorePreparedFile(ImportJob importJob) {
+        ImportJobFile importJobFile = importJobFileMapper.selectById(
+                importJob.getId()
+        );
+        if (importJobFile == null) {
+            throw new IllegalStateException(
+                    "Persisted import file is missing"
+            );
+        }
+        byte[] content = importJobFile.getContent();
+        if (content == null
+                || importJobFile.getContentLength() == null
+                || importJobFile.getContentLength() != content.length
+                || importJob.getFileSizeBytes() == null
+                || importJob.getFileSizeBytes() != content.length) {
+            throw new IllegalStateException(
+                    "Persisted import file length is inconsistent"
+            );
+        }
+        PreparedImportFile preparedFile = fileParser.prepare(
+                importJob.getOriginalFileName(),
+                content
+        );
+        if (!preparedFile.fileHash().equals(importJob.getFileHash())) {
+            throw new IllegalStateException(
+                    "Persisted import file hash is inconsistent"
+            );
+        }
+        return preparedFile;
     }
 
     private int persistTransactionBatch(

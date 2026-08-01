@@ -24,6 +24,10 @@ spring:
 
 finguard:
   messaging:
+    import-consumer:
+      enabled: "${FINGUARD_IMPORT_CONSUMER_ENABLED:true}"
+      concurrency: "${FINGUARD_IMPORT_CONSUMER_CONCURRENCY:1}"
+      prefetch: "${FINGUARD_IMPORT_CONSUMER_PREFETCH:1}"
     outbox:
       enabled: "${FINGUARD_OUTBOX_ENABLED:true}"
       fixed-delay-ms: "${FINGUARD_OUTBOX_FIXED_DELAY_MS:1000}"

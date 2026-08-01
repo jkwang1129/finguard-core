@@ -16,8 +16,8 @@ import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 /**
  * Declares the durable business topology used by the asynchronous flows.
  *
- * <p>Day 2 only creates the primary exchanges, queues, and bindings. Producers,
- * consumers, retry queues, and dead-letter handling belong to later days.</p>
+ * <p>The primary import queue has a Day 4 consumer. Reconciliation consumers,
+ * retry queues, and dead-letter handling belong to later days.</p>
  */
 @Configuration(proxyBeanMethods = false)
 public class RabbitMessagingConfiguration {

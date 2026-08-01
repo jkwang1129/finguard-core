@@ -29,6 +29,7 @@
 | Week 4 Day 1 | 已完成 | 异步导入/对账消息契约、文件持久化方案、Outbox、Confirm/ACK、幂等、重试和死信边界已锁定 |
 | Week 4 Day 2 | 已完成 | RabbitMQ 依赖、Docker 服务、连接配置、导入/对账基础拓扑、真实连接和健康验收完成 |
 | Week 4 Day 3 | 已完成 | V7、原始文件持久化、Outbox、202 异步受理、Confirm/return 与发布退避已完成真实验收 |
+| Week 4 Day 4 | 已完成 | 异步导入消费者、数据库业务事务、提交后手动 ACK 和真实验收完成 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -846,6 +847,68 @@
 - **回滚**：Java/配置可回退；已应用 V7 不得修改或删除，只能新增迁移演进，数据卷不得作为回滚手段删除。
 - **提交**：`feat: add reliable outbox publishing`
 
+### Week 4 Day 4：异步导入消费者与手动 ACK
+
+- **状态**：已完成
+- **业务目标**：让 `finguard.import.queue` 中的 `IMPORT_REQUESTED` 消息真正驱动 CSV 导入；消费者从 MySQL 读取 Day 3 已持久化的原始文件，复用 Week 3 的解析、校验、交易/行错误入库和终态统计逻辑，并且只在业务事务成功提交后手动 ACK。
+- **实现前基线**：Day 3 已把首次上传改为 `202/PENDING`，并原子保存任务、原始 CSV 和 Outbox；Relay 已能把持久化 JSON 消息可靠发布到导入主队列，但当时没有消费者，因此任务会停留在 `PENDING`。
+- **请求流**：
+  ```text
+  Outbox Relay 发布 IMPORT_REQUESTED
+    → finguard.import.queue
+    → Listener 校验 messageId、eventType、aggregateId 和 schemaVersion
+    → 以 aggregateId 定位 PENDING import_job
+    → 从 import_job_files 读取原始 CSV 字节并恢复 PreparedImportFile
+    → 同一业务事务内推进 PENDING → PROCESSING
+    → 复用 Week 3 解析、逐行校验、批量交易/行错误入库和统计逻辑
+    → 提交 SUCCESS / PARTIAL_SUCCESS / FAILED
+    → 数据库事务成功提交
+    → basicAck(deliveryTag, false)
+  ```
+- **范围边界**：
+  - 本日只实现导入主队列消费者、消息基础校验、持久化文件读取、导入业务编排和手动 ACK；不实现对账消费者。
+  - 正常成功、部分成功和可落库的文件级业务失败均形成确定终态，事务提交后 ACK；未预期系统异常必须回滚且不能 ACK，也不能把任务伪装成成功。
+  - 本日只验证单次系统失败时“不提交错误业务结果、不 ACK、不静默丢消息”；重复投递、并发抢占、ACK 丢失、`PROCESSING` 租约和宕机恢复由 Day 5 完成。
+  - 两级重试队列、重试次数、退避和 DLQ 由 Day 6 完成；Day 4 不使用无限 `requeue=true` 冒充可靠重试能力。
+  - 不新增或修改 Flyway 迁移，不改变 V1～V7、CSV 字段契约、交易唯一键、HTTP 权限和 `202 + Location` 语义。
+  - 不引入 Redis、风险规则、人工审核、审计、监控、前端或自动触发对账。
+- **执行顺序**：
+  1. 新增 Day 4 设计文档，锁定 Listener、业务事务、ACK 时点、异常分类和 Day 5/Day 6 交接边界。
+  2. 配置只供导入消费者使用的手动 ACK Listener Container，明确并发数、prefetch 和测试环境启停开关。
+  3. 新增导入消息 Listener/Handler，严格校验事件类型、版本、任务 ID 和消息 ID，不把消息体中的数据当作业务真源。
+  4. 为 `ImportJobTransactionService` 增加“按任务 ID 读取持久化文件并处理”的入口，复用现有解析、校验、批量写入和终态统计，不复制一套导入规则。
+  5. 保证 ACK 位于业务方法正常返回之后；业务事务抛出异常时 Listener 不 ACK，自动化测试必须验证调用顺序和失败行为。
+  6. 先跑 Listener/业务聚焦测试，再跑真实 MySQL + RabbitMQ 异步导入验收和完整 `mvn clean test`。
+  7. 清理验收任务、交易、行错误、文件、Outbox 和队列消息，释放临时应用端口，执行 `git diff --check` 和范围审计。
+- **任务**：
+  - [x] 新增 `docs/design/week4-day4-async-import-consumer-design.md`。
+  - [x] 新增手动 ACK Listener Container 配置，并提供可测试的消费者启停配置。
+  - [x] 新增 `IMPORT_REQUESTED` Listener/Handler，完成消息字段和类型校验。
+  - [x] 从 `import_job_files` 按任务 ID 读取原始字节，校验文件记录与任务元数据一致。
+  - [x] 复用 Week 3 导入逻辑完成 `PENDING → PROCESSING → SUCCESS / PARTIAL_SUCCESS / FAILED`。
+  - [x] 确保数据库提交后才调用 `basicAck`；系统异常时事务回滚且不 ACK。
+  - [x] 增加成功、部分成功、文件级失败、消息非法和系统异常的聚焦测试。
+  - [x] 完成真实 HTTP `202` → RabbitMQ 消费 → GET 轮询终态 → MySQL 统计守恒的端到端验收。
+  - [x] 运行完整回归、清理数据/消息/端口并完成提交前检查。
+- **关键文件**：
+  - `docs/design/week4-day4-async-import-consumer-design.md`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/messaging/consumer/`
+  - `src/main/java/com/finguard/core/importjob/service/impl/ImportJobTransactionService.java`
+  - `src/test/java/com/finguard/core/messaging/consumer/`
+- **验收标准**：
+  - 首次 ADMIN 上传仍返回 `202/PENDING`；真实消费者随后把任务推进到正确终态，GET 轮询无需依赖同步等待。
+  - 合法文件、部分错误文件和文件级错误分别得到 `SUCCESS`、`PARTIAL_SUCCESS`、`FAILED`，任务计数与交易/行错误数据守恒。
+  - Listener 只消费导入事件；错误事件类型、错误版本、非法任务 ID 或缺失文件不会执行导入，也不会产生交易副作用。
+  - 自动化测试证明 `basicAck` 发生在业务方法成功返回之后；模拟系统异常时无 ACK、业务事务回滚且没有假成功状态。
+  - 真实 RabbitMQ 队列可观察到消息被消费并确认，结束后消费者、待确认消息和验收消息均清零。
+  - 聚焦测试和完整 `mvn clean test` 全部通过；MySQL/RabbitMQ/HTTP 验收完成，测试数据与临时端口清理，`git diff --check` 通过。
+- **验收结论**：Day 4 聚焦测试 9/9、完整 `mvn clean test` 251/251 通过且无失败、错误或跳过；真实应用 `18080/actuator/health` 为 `200/UP`，首次 ADMIN multipart 上传返回 `202/PENDING + Location`，随后经 Outbox/RabbitMQ 消费轮询到 `SUCCESS|1|1|0`，MySQL 确认 1 条交易、1 份原始文件和 1 个 `SENT` 事件；重复文件返回 `200 duplicateFile=true` 并复用原任务。验收时导入队列 `ready=0/unacked=0`，结束后用户、账户、任务和交易残留均为 0，消费者和端口 `18080` 已释放。
+- **学习重点**：`@RabbitListener`、Listener Container、手动 ACK、delivery tag、prefetch、数据库事务提交边界、业务错误与系统错误、消息载荷与数据库真源、异步任务轮询。
+- **常见错误预防**：不要在业务事务提交前 ACK；不要把原始 CSV 放回消息；不要在 Listener 复制 Week 3 规则；不要用 `catch (Exception)` 后 ACK；不要在 Day 4 用无限重入主队列代替 Day 6 的有限重试和 DLQ。
+- **回滚**：只回退 Day 4 新增的消费者、配置、测试和对导入 Service/Mapper 的最小改造；不修改或删除 V7。回滚后 HTTP 仍可可靠受理并发布消息，但导入任务会保持 `PENDING`，与 Day 3 基线一致。
+- **提交**：`feat: add asynchronous import consumer`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -853,7 +916,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1 异步消息契约、Day 2 RabbitMQ 基础设施、Day 3 文件持久化/Outbox/异步受理/可靠发布已完成；后续实现消费者、手动 ACK、消费幂等、重试和死信队列 |
+| Week 4 | Day 1～Day 4 已完成；后续完成导入消费幂等、处理租约、对账消费者、重试和死信队列 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -886,4 +949,5 @@
 | Week 3 Day 7 综合验收 | `e404682` |
 | Week 4 Day 1 异步消息契约设计 | `996c013` |
 | Week 4 Day 2 RabbitMQ 基础设施 | `7f77980` |
-| Week 4 Day 3 Outbox 可靠发布 | 本次提交 |
+| Week 4 Day 3 Outbox 可靠发布 | `bfd9a25` |
+| Week 4 Day 4 异步导入消费者 | 见本次提交 |
