@@ -26,7 +26,7 @@
 | Week 3 Day 5 | 已完成 | 同步上传、文件哈希幂等、状态流转、批量持久化、失败恢复和权限验收完成 |
 | Week 3 Day 6 | 已完成 | 同步自动对账、四类结果、幂等、批处理、失败恢复和权限验收完成 |
 | Week 3 Day 7 | 已完成 | Week 3 综合验收、真实 MySQL/JWT/HTTP 验收、清理和周复盘完成 |
-| Week 4 | 待规划 | RabbitMQ 异步化、可靠投递、消费幂等、重试和死信 |
+| Week 4 Day 1 | 已完成 | 异步导入/对账消息契约、文件持久化方案、Outbox、Confirm/ACK、幂等、重试和死信边界已锁定 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -694,6 +694,76 @@
 - **验收**：聚焦测试 34/34、完整 `mvn clean test` 230/230；真实 HTTP 覆盖 `201/200/403/404` 矩阵；干净卷 V1→V6、统计守恒、失败恢复、数据清理和端口释放均通过，详见 `docs/review/week3-review.md`。
 - **提交**：`docs: complete week 3 acceptance review`
 
+### Week 4 Day 1：异步导入与对账消息契约设计
+
+- **状态**：已完成
+- **业务目标**：在 Week 3 同步导入和同步对账闭环之上，设计可持久化、可异步执行、可重试和可恢复的 RabbitMQ 消息流程；HTTP 请求只负责受理任务，消费者负责业务处理，不能因为重复投递而重复写入交易或对账结果。
+- **当前基线**：Week 3 已完成 `POST /api/import-jobs` 的同步文件处理、SHA-256 文件幂等、任务状态流转、批量交易入库、失败恢复，以及独立的同步对账触发、四类结果和并发幂等；完整测试和真实 MySQL/JWT/HTTP 综合验收已完成。
+- **请求流设计**：
+  ```text
+  导入：ADMIN 上传 file
+    → 请求级检查、读取原始字节、计算 SHA-256
+    → 命中已有 fileHash：返回原任务，不创建新任务、不重复入队
+    → 未命中：一个数据库事务内创建 PENDING、保存原始文件、写入 IMPORT_REQUESTED Outbox
+    → 返回 202 + Location
+    → Outbox Relay 发布消息并等待 Publisher Confirm
+    → 导入消费者条件式推进 PENDING → PROCESSING
+    → 复用 Week 3 解析/校验/入库逻辑
+    → 事务提交后手动 ACK
+
+  对账：ADMIN 提交 importJobId
+    → 创建或复用 PENDING 对账任务并写入 Outbox
+    → 返回 202 + Location
+    → Relay 发布 RECONCILIATION_REQUESTED
+    → 对账消费者复用 Week 3 匹配、结果写入和统计守恒逻辑
+    → 事务提交后手动 ACK
+  ```
+- **范围边界**：
+  - 本日只完成异步架构、HTTP 契约、消息契约、可靠性边界、文件持久化方案、测试矩阵和后续执行顺序设计。
+  - 不添加 RabbitMQ 依赖、`@RabbitListener`、Docker RabbitMQ 服务、V7/V8 迁移或运行时代码。
+  - 不修改已应用的 V1～V6，不改变 Week 3 的 CSV 字段、SHA-256、行校验、交易唯一键和对账匹配规则。
+  - 不引入 Redis、风险规则、人工审核、乐观锁、审计、监控、前端或 MinIO。
+  - 不提供 exactly-once、强制重跑、覆盖导入或无限 `requeue=true`。
+- **执行顺序**：
+  1. 复盘现有 `importjob` 和 `reconciliation` 同步调用链，标记 HTTP 编排、事务业务和未来消费者边界。
+  2. 锁定首次受理 `202 + Location`、重复请求复用原任务、任务查询轮询和权限矩阵。
+  3. 解决当前原始 CSV 只在 HTTP 内存中的问题，确定独立 `import_job_files` 表保存原始字节的方案。
+  4. 定义导入/对账消息字段、`schemaVersion`、稳定 `messageId`、exchange、queue、routing key、重试队列和 DLQ。
+  5. 定义任务创建事务、Outbox 发布事务、消费者业务事务和手动 ACK 的边界。
+  6. 区分业务错误、临时系统错误、重复消息、ACK 失败和超过次数后的死信处理。
+  7. 登记 Day 2～Day 7 的实现顺序、测试矩阵、回滚边界和面试解释要点。
+- **任务**：
+  - [x] 新增 `docs/design/week4-day1-async-messaging-contract.md`。
+  - [x] 定义导入和对账的异步请求流，保留 ADMIN/REVIEWER 权限边界和独立手动对账触发。
+  - [x] 定义 `202 + Location` 受理语义、重复文件/重复触发语义和任务状态查询语义。
+  - [x] 确定原始 CSV 独立持久化方案，明确后续新增迁移、禁止修改 V1～V6。
+  - [x] 定义只携带任务 ID 的消息格式、事件类型、版本、稳定消息 ID和持久化投递要求。
+  - [x] 定义持久化 exchange、主队列、两级重试队列、DLQ 和禁止无限 requeue 的边界。
+  - [x] 区分 Publisher Confirm、消费者手动 ACK、Outbox、业务幂等和数据库唯一键的职责。
+  - [x] 定义重复消费、并发消费、数据库提交后 ACK 失败、临时异常和业务异常的处理矩阵。
+  - [x] 登记 Day 2～Day 7 任务顺序、学习重点、验收标准和回滚方案。
+- **关键设计决定**：
+  - 首次异步导入和对账请求返回 `202 Accepted`，任务详情通过现有 GET 接口轮询；重复文件和重复对账请求仍复用原任务，不重新创建业务任务。
+  - 原始 CSV 不放进 RabbitMQ 消息；新增独立 `import_job_files` 表保存原始字节，后续通过新的 Flyway 迁移实现。
+  - 任务、原始文件和 Outbox 事件在同一 MySQL 事务内提交；Outbox Relay 发布持久化消息并等待 Publisher Confirm。
+  - 采用至少一次投递，允许消息重复；消费者通过任务状态条件更新、业务幂等和数据库唯一键避免重复交易/结果。
+  - 业务错误正常落库并 ACK；临时系统错误进入有限重试；超过最大次数后进入 DLQ，并用独立事务把仍处理中的任务标记为安全失败。
+  - Week 4 不把上传和对账自动绑定，保留 Week 3 的独立手动对账入口。
+- **关键文件**：
+  - `docs/design/week4-day1-async-messaging-contract.md`
+  - `TASKS.md`
+  - 后续实现预计涉及 `pom.xml`、`docker-compose.yml`、`application.yml`、`importjob`、`reconciliation` 和新的 Flyway 迁移；本日不修改这些代码文件。
+- **验收**：
+  - [x] 设计文档覆盖当前同步基线、异步导入/对账流程、HTTP 契约、状态机和权限边界。
+  - [x] 设计文档覆盖原始文件持久化、消息字段、拓扑、Outbox、Publisher Confirm、手动 ACK、幂等、重试和 DLQ。
+  - [x] 设计文档覆盖业务错误/系统错误/重复消息/ACK 失败/死信的决策表，以及 Day 2～Day 7 验收矩阵。
+  - [x] 设计边界确认没有提前实现 RabbitMQ、Redis、风险、审核、审计、监控或数据库迁移。
+  - [x] `git diff --check` 通过；完整 `mvn clean test` 保持 Week 3 基线通过，详见后续验收记录。
+- **学习重点**：HTTP `202` 与异步任务、Exchange/Queue/Routing Key/Binding、Publisher Confirm 与 Consumer ACK、至少一次投递、Outbox、消费者幂等、事务边界、有限重试和死信队列。
+- **回滚**：本日只有设计文档和任务清单变更；若设计评审否决异步契约，可删除新增设计文档并回退本节，不涉及 Java 代码、数据库数据、Flyway checksum 或 RabbitMQ 环境。后续数据库变更只能新增迁移，不能修改 V1～V6。
+- **验收结论**：Day 1 设计文档和任务清单已完成，异步请求语义、原始文件持久化、消息契约、可靠投递和失败处理边界已锁定；实现从 Day 2 开始。
+- **提交**：`docs: design week4 day1 async messaging contract`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -701,7 +771,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | RabbitMQ 异步导入与对账、Publisher Confirm、手动 ACK、消费幂等、重试和死信队列 |
+| Week 4 | Day 1 已完成异步消息契约设计；后续实现 RabbitMQ 异步导入与对账、Publisher Confirm、手动 ACK、消费幂等、重试和死信队列 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -731,4 +801,5 @@
 | Week 3 Day 4 行校验 | `2b52b6a` |
 | Week 3 Day 5 同步导入 | `ce5e020` |
 | Week 3 Day 6 同步对账 | `20626dd` |
-| Week 3 Day 7 综合验收 | 待提交 |
+| Week 3 Day 7 综合验收 | `e404682` |
+| Week 4 Day 1 异步消息契约设计 | 本次提交 |
