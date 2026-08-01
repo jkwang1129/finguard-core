@@ -31,6 +31,7 @@
 | Week 4 Day 3 | 已完成 | V7、原始文件持久化、Outbox、202 异步受理、Confirm/return 与发布退避已完成真实验收 |
 | Week 4 Day 4 | 已完成 | 异步导入消费者、数据库业务事务、提交后手动 ACK 和真实验收完成 |
 | Week 4 Day 5 | 已完成 | 导入消费幂等、任务行锁、ACK 丢失红投和消费者崩溃恢复已完成真实验收 |
+| Week 4 Day 6 | 已完成 | 异步对账消费者、两级有限重试、失败分类、DLQ 隔离和真实验收完成 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -977,6 +978,84 @@
 - **回滚**：Listener/Handler/Service/Mapper 和测试可按本日范围回退；本日没有数据库迁移。回滚后恢复到 Day 4 的单次异步消费能力，已完成的任务和交易不得删除或重放。
 - **提交**：`feat: make import consumption idempotent`
 
+### Week 4 Day 6：异步对账消费者、有限重试与死信隔离
+
+- **状态**：已完成
+- **业务目标**：让 `RECONCILIATION_REQUESTED` 消息真正驱动自动对账，并为导入、对账两条消费链路建立统一但有边界的失败处理：确定性业务结果正常结束，临时系统故障最多延迟重试两次，非法或耗尽重试的消息进入对应 DLQ，不能无限重回主队列、静默丢失或重复写业务数据。
+- **实现前基线**：Day 5 已完成异步导入、同任务行锁幂等、事务回滚恢复和提交后 ACK 丢失恢复；`RECONCILIATION_REQUESTED` 已由 Outbox 可靠发布到 `finguard.reconciliation.queue`，但没有消费者，因此新对账任务仍停留在 `PENDING`。当前导入 Listener 遇到非法消息或持续系统异常时只是不 ACK，尚无有限重试、退避和隔离闭环。
+- **目标流程**：
+  ```text
+  RECONCILIATION_REQUESTED
+    → 校验稳定消息契约，以 reconciliationJobId 查询数据库真源
+    → 锁定对账任务并判断状态
+      → PENDING / 可恢复 PROCESSING：复用 Week 3 匹配、结果写入和统计逻辑
+      → COMPLETED / FAILED：幂等短路，不重复写结果
+    → 同一数据库事务提交终态
+    → 手动 ACK
+
+  导入或对账消费失败
+    → 已处理业务结果：提交终态并 ACK，不重试
+    → 非法消息 / 不存在的任务：直接投递对应 DLQ，确认成功后 ACK 原消息
+    → 临时系统故障：retry.1（5 秒）→ retry.2（30 秒）→ 回主队列重试
+    → 两次重试后仍失败：安全标记现有非终态任务 FAILED → 投递 DLQ → ACK 原消息
+  ```
+- **范围边界**：
+  - 本日实现对账消费者，并把有限重试/DLQ 同时接到导入和对账消费者；不只给其中一条链路做“演示版”重试。
+  - 每条消息最多执行 1 次首次消费和 2 次延迟重试；第一版退避锁定为 5 秒、30 秒，禁止无限 `requeue=true`、零延迟忙循环和无上限指数退避。
+  - 对账继续由 ADMIN 的 `POST /api/reconciliation-jobs` 显式触发；不在导入成功后自动创建对账任务，不新增人工重跑、删除任务或覆盖结果接口。
+  - 保持现有 JSON 消息字段和稳定 `messageId`；重试次数使用受控消息头，RabbitMQ `x-death` 只用于诊断证据，不作为业务幂等主键。
+  - 已处理的文件级业务失败、部分成功和对账确定性失败不盲目重试；非法消息、错误事件类型、错误版本、非法重试头和任务不存在直接隔离，且不得伪造业务任务。
+  - 默认不新增 V8，不修改 V1～V7；优先复用任务状态、行锁和现有唯一约束。只有真实 SQL/并发测试证明现有结构不足时，才评审新的追加迁移。
+  - 不引入 RabbitMQ 延迟消息插件、Redis、风险规则、人工审核、审计、监控、通用 MQ 框架或前端。
+- **关键设计决定**：
+  - 两条业务主队列各有 `retry.1`、`retry.2` 和 DLQ；retry queue 使用 TTL 到期后死信回原业务 exchange/主 routing key，DLQ 绑定统一 `finguard.dlx`。
+  - 原始消息无重试头时按第 0 次处理；第一次临时失败写入 attempt=1 并送 retry.1，第二次写入 attempt=2 并送 retry.2，第三次失败进入 DLQ。重试不能修改消息体中的 `messageId`、事件类型、任务 ID、版本或创建时间。
+  - 从主队列转交 retry queue/DLQ 时，必须先得到 Publisher Confirm ACK 且没有 mandatory return，之后才能 ACK 原消息；转交失败时原消息不得确认。即使“转交成功但原 ACK 丢失”造成重复投递，也由 Day 5 和本日的数据库幂等兜住。
+  - 对账消费沿用数据库任务状态作为真源：同一任务并发消息通过行锁串行，`COMPLETED / FAILED` 直接幂等 ACK；`PENDING` 或可证明安全的遗留 `PROCESSING` 才进入业务处理。
+  - 对账结果写入、统计守恒和终态更新必须在同一事务中完成；临时异常整体回滚，不得留下半套结果。重试耗尽时用独立短事务只把仍非终态的任务标记为 `FAILED`，不得覆盖已经提交的成功终态。
+  - DLQ 保留原消息和安全的失败分类/重试次数，禁止写入 SQL、路径、密码、JWT、CSV 原文或堆栈；业务接口只暴露安全失败摘要，不暴露 RabbitMQ 内部细节。
+- **执行顺序**：
+  1. 新增 Day 6 设计文档，锁定两条链路的异常分类表、ACK/NACK/转交时序、重试头、TTL、DLX/DLQ 拓扑、对账事务和回滚边界。
+  2. 扩展 RabbitMQ 声明与配置测试，建立导入/对账各两级 retry queue 和一个 DLQ，并验证 durable、binding、TTL、DLX 和 routing key 参数。
+  3. 先实现共享的消费失败分类与可靠转交组件：保留稳定消息、增加受控 attempt 头、等待 Confirm/return 结果，再决定 ACK、重试或隔离。
+  4. 改造导入 Listener 接入有限重试和 DLQ；保持 Day 5 的终态幂等、行锁和崩溃恢复行为不变。
+  5. 新增对账 Listener/Handler/Container 配置，并重构最小对账事务入口，复用现有 Matcher、批量查询、结果写入和统计逻辑，补齐并发与终态幂等。
+  6. 增加消息非法、任务不存在、确定性业务失败、临时故障后恢复、重试耗尽、转交失败、ACK 丢失和同任务并发测试，逐项核对消息去向及数据库副作用。
+  7. 使用真实 MySQL + RabbitMQ + JWT + HTTP 完成异步导入、异步对账、两级退避、恢复成功和 DLQ 隔离验收，并检查主队列/retry queue/DLQ 的 `ready/unacked`。
+  8. 运行聚焦测试和完整 `mvn clean test`，清理任务、结果、交易、行错误、文件、Outbox、所有测试消息和临时端口，执行 `git diff --check` 与范围审计。
+- **任务**：
+  - [x] 新增 `docs/design/week4-day6-retry-dlq-and-reconciliation-consumer-design.md`，完成异常决策表、消息时序和事务评审。
+  - [x] 声明导入/对账各两级 TTL retry queue、对应 binding、统一 DLX 和各自 DLQ，并提供可校验的配置边界。
+  - [x] 实现受控 retry attempt、失败分类和“可靠转交成功后再 ACK 原消息”的共享组件。
+  - [x] 将导入消费者接入有限重试、非法消息隔离和重试耗尽处理，保持 Day 5 幂等语义不变。
+  - [x] 实现对账消息校验、手动 ACK、任务行锁、终态幂等和单事务结果提交。
+  - [x] 实现导入/对账重试耗尽后的安全失败恢复，不覆盖并发完成的终态，不伪造不存在的任务。
+  - [x] 覆盖拓扑、路由、Listener、Handler、事务、并发、重试恢复、DLQ 和无副作用测试。
+  - [x] 完成真实 HTTP/MySQL/RabbitMQ 端到端验收、完整回归、清理和提交前检查。
+- **关键文件**：
+  - `docs/design/week4-day6-retry-dlq-and-reconciliation-consumer-design.md`
+  - `src/main/java/com/finguard/core/messaging/config/RabbitMessagingConfiguration.java`
+  - `src/main/java/com/finguard/core/messaging/consumer/`
+  - `src/main/java/com/finguard/core/reconciliation/service/impl/ReconciliationJobTransactionService.java`
+  - `src/main/java/com/finguard/core/reconciliation/mapper/ReconciliationJobMapper.java`
+  - `src/main/resources/application.yml`
+  - `src/test/java/com/finguard/core/messaging/`
+  - `src/test/java/com/finguard/core/reconciliation/`
+- **验收标准**：
+  - 真实 ADMIN 创建对账任务返回 `202/PENDING + Location`，Outbox 发布后由对账消费者推进到 `COMPLETED`；GET 查询的四类统计之和等于总数，结果数量与数据库一致。
+  - 同一对账消息顺序或并发投递至少 2 次，只产生一套对账结果和一个正确终态；提交后 ACK 丢失的红投只做终态短路。
+  - 导入和对账分别注入一次临时系统故障，消息经过 retry.1 延迟后可恢复成功；注入连续故障时严格经过 retry.1、retry.2，随后只进入对应 DLQ 一次，主队列不忙循环。
+  - 非法消息、错误版本/事件类型、非法 attempt 头和不存在任务直接进入正确 DLQ，不调用业务 Service、不新增或修改任务、交易、行错误或对账结果。
+  - retry/DLQ 转交失败时原消息不被 ACK；转交成功但原 ACK 失败后允许重复投递，但业务数据仍保持唯一。
+  - 重试耗尽只把仍非终态的真实任务安全标记为 `FAILED` 并保存固定安全摘要；已完成任务不被覆盖，消息/DLQ 不包含敏感数据或内部异常。
+  - 自动化测试验证两套 topology 的 queue arguments、TTL、DLX、routing key、持久化和消息头保持；真实 RabbitMQ 可观察到延迟和最终路由。
+  - 聚焦测试和完整 `mvn clean test` 全部通过；真实 MySQL/JWT/HTTP/RabbitMQ 验收、数据/消息/端口清理和 `git diff --check` 全部完成。
+- **验收结论**：Day 6 新增/扩展 32 个自动化用例，完整 `mvn clean test` 287/287 通过，零失败、零错误、零跳过。真实 Broker 测试分别验证导入和对账的一次临时失败经 5 秒 retry.1 恢复，以及持续失败严格经过 5 秒 retry.1、30 秒 retry.2 后安全标记 `FAILED` 并进入正确 DLQ；并发重复、非法 attempt、任务不存在、转交失败和 ACK 丢失均无重复业务副作用。真实 Java 17 应用健康为 `UP`，ADMIN JWT 登录后完成账户、人工交易、`202/PENDING → SUCCESS` 异步导入和 `202/PENDING → COMPLETED` 异步对账；MySQL 核对为 1 条导入交易、1 条对账结果和 2 条 `SENT` Outbox。验收用户、账户、任务、文件、交易、结果和消息已清理，8 个队列均为 `ready=0/unacked=0`，端口 `8080` 已释放。
+- **学习重点**：RabbitMQ TTL、DLX/DLQ、消息红投与重发的区别、`x-death`、有限退避、异常分类、Publisher Confirm 与 Consumer ACK 的组合、毒消息隔离、至少一次投递下的幂等、数据库行锁和事务恢复。
+- **常见错误预防**：不要 `basicNack(..., true)` 无限回主队列；不要用 `deliveryTag` 或 `x-death` 当业务幂等键；不要先 ACK 再发布 retry/DLQ；不要每次重试生成新 `messageId`；不要把业务校验失败当临时故障反复执行；不要在重试耗尽时覆盖已完成终态；不要为 Day 6 顺手加入管理后台或 Redis。
+- **回滚**：可回退 Day 6 新增的 retry/DLQ 声明、失败路由组件、对账消费者、配置和测试，恢复 Day 5 行为；V1～V7、已完成任务、Outbox、交易和对账结果不得删除或重放。若队列参数已在本地 Broker 声明，回滚前只清理本项目明确命名的 Day 6 队列，不能删除 RabbitMQ 数据卷或其他队列。
+- **提交**：`feat: add reconciliation consumer retries and DLQ`（见本次提交）
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -984,7 +1063,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1～Day 5 已完成；后续完成对账消费者、有限重试和死信队列 |
+| Week 4 | Day 1～Day 6 已完成；Day 7 完成周验收与复盘 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -1019,4 +1098,5 @@
 | Week 4 Day 2 RabbitMQ 基础设施 | `7f77980` |
 | Week 4 Day 3 Outbox 可靠发布 | `bfd9a25` |
 | Week 4 Day 4 异步导入消费者 | `e6c6edf` |
-| Week 4 Day 5 导入消费幂等与崩溃恢复 | 见本次提交 |
+| Week 4 Day 5 导入消费幂等与崩溃恢复 | `be4779b` |
+| Week 4 Day 6 异步对账、有限重试与死信隔离 | 见本次提交 |

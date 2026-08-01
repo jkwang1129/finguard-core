@@ -8,6 +8,7 @@ import org.springframework.amqp.core.Queue;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -42,6 +43,12 @@ class RabbitMessagingConfigurationTest {
                                         .RECONCILIATION_EXCHANGE,
                                 true,
                                 false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .DEAD_LETTER_EXCHANGE,
+                                true,
+                                false,
                                 false));
 
         List<Queue> queues = declarables.stream()
@@ -62,10 +69,94 @@ class RabbitMessagingConfigurationTest {
                                 false),
                         tuple(
                                 RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_ONE_QUEUE,
+                                true,
+                                false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_TWO_QUEUE,
+                                true,
+                                false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration.IMPORT_DLQ,
+                                true,
+                                false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
                                         .RECONCILIATION_QUEUE,
                                 true,
                                 false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_ONE_QUEUE,
+                                true,
+                                false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_TWO_QUEUE,
+                                true,
+                                false,
+                                false),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_DLQ,
+                                true,
+                                false,
                                 false));
+
+        assertQueueArguments(
+                queues,
+                RabbitMessagingConfiguration.IMPORT_QUEUE,
+                Map.of(
+                        "x-dead-letter-exchange",
+                        RabbitMessagingConfiguration.DEAD_LETTER_EXCHANGE
+                )
+        );
+        assertQueueArguments(
+                queues,
+                RabbitMessagingConfiguration.RECONCILIATION_QUEUE,
+                Map.of(
+                        "x-dead-letter-exchange",
+                        RabbitMessagingConfiguration.DEAD_LETTER_EXCHANGE
+                )
+        );
+        assertRetryQueueArguments(
+                queues,
+                RabbitMessagingConfiguration.IMPORT_RETRY_LEVEL_ONE_QUEUE,
+                RabbitMessagingConfiguration.RETRY_LEVEL_ONE_DELAY_MS,
+                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                RabbitMessagingConfiguration.IMPORT_REQUESTED_ROUTING_KEY
+        );
+        assertRetryQueueArguments(
+                queues,
+                RabbitMessagingConfiguration.IMPORT_RETRY_LEVEL_TWO_QUEUE,
+                RabbitMessagingConfiguration.RETRY_LEVEL_TWO_DELAY_MS,
+                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                RabbitMessagingConfiguration.IMPORT_REQUESTED_ROUTING_KEY
+        );
+        assertRetryQueueArguments(
+                queues,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_RETRY_LEVEL_ONE_QUEUE,
+                RabbitMessagingConfiguration.RETRY_LEVEL_ONE_DELAY_MS,
+                RabbitMessagingConfiguration.RECONCILIATION_EXCHANGE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_REQUESTED_ROUTING_KEY
+        );
+        assertRetryQueueArguments(
+                queues,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_RETRY_LEVEL_TWO_QUEUE,
+                RabbitMessagingConfiguration.RETRY_LEVEL_TWO_DELAY_MS,
+                RabbitMessagingConfiguration.RECONCILIATION_EXCHANGE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_REQUESTED_ROUTING_KEY
+        );
 
         List<Binding> bindings = declarables.stream()
                 .filter(Binding.class::isInstance)
@@ -88,6 +179,75 @@ class RabbitMessagingConfigurationTest {
                                 RabbitMessagingConfiguration
                                         .RECONCILIATION_REQUESTED_ROUTING_KEY,
                                 RabbitMessagingConfiguration
-                                        .RECONCILIATION_QUEUE));
+                                        .RECONCILIATION_QUEUE),
+                        tuple(
+                                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_ONE_ROUTING_KEY,
+                                RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_ONE_QUEUE),
+                        tuple(
+                                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_TWO_ROUTING_KEY,
+                                RabbitMessagingConfiguration
+                                        .IMPORT_RETRY_LEVEL_TWO_QUEUE),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_ONE_ROUTING_KEY,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_ONE_QUEUE),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_TWO_ROUTING_KEY,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_RETRY_LEVEL_TWO_QUEUE),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .DEAD_LETTER_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .IMPORT_REQUESTED_ROUTING_KEY,
+                                RabbitMessagingConfiguration.IMPORT_DLQ),
+                        tuple(
+                                RabbitMessagingConfiguration
+                                        .DEAD_LETTER_EXCHANGE,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_REQUESTED_ROUTING_KEY,
+                                RabbitMessagingConfiguration
+                                        .RECONCILIATION_DLQ));
+    }
+
+    private void assertRetryQueueArguments(
+            List<Queue> queues,
+            String queueName,
+            int ttlMillis,
+            String deadLetterExchange,
+            String deadLetterRoutingKey) {
+        assertQueueArguments(
+                queues,
+                queueName,
+                Map.of(
+                        "x-message-ttl", ttlMillis,
+                        "x-dead-letter-exchange", deadLetterExchange,
+                        "x-dead-letter-routing-key", deadLetterRoutingKey
+                )
+        );
+    }
+
+    private void assertQueueArguments(
+            List<Queue> queues,
+            String queueName,
+            Map<String, Object> expectedArguments) {
+        Queue queue = queues.stream()
+                .filter(candidate -> candidate.getName().equals(queueName))
+                .findFirst()
+                .orElseThrow();
+        assertThat(queue.getArguments()).containsAllEntriesOf(
+                expectedArguments
+        );
     }
 }

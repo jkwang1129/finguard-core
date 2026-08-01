@@ -46,6 +46,8 @@ public class ImportJobTransactionService {
             "uk_transactions_account_source_external_no";
     private static final String PROCESSING_FAILED_MESSAGE =
             "Import processing failed";
+    private static final String RETRY_EXHAUSTED_MESSAGE =
+            "Import retry limit reached";
 
     private final ImportJobMapper importJobMapper;
     private final ImportJobFileMapper importJobFileMapper;
@@ -239,6 +241,34 @@ public class ImportJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, importJobId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean markRetryExhausted(Long importJobId) {
+        if (importJobId == null || importJobId <= 0) {
+            throw new IllegalArgumentException(
+                    "importJobId must be a positive number"
+            );
+        }
+        int updated = importJobMapper.failAfterRetryExhaustion(
+                importJobId,
+                RETRY_EXHAUSTED_MESSAGE,
+                LocalDateTime.now(businessClock)
+        );
+        if (updated == 1) {
+            return true;
+        }
+        ImportJob current = importJobMapper.selectById(importJobId);
+        if (current == null) {
+            throw new ImportJobNotFoundException(importJobId);
+        }
+        if (isTerminal(current.getStatus())) {
+            return false;
+        }
+        throw new IllegalStateException(
+                "Import retry exhaustion transition was rejected: "
+                        + importJobId
+        );
     }
 
     @Transactional(readOnly = true)

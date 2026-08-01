@@ -10,6 +10,8 @@ import com.finguard.core.importjob.support.ImportJobTestFixture;
 import com.finguard.core.importjob.vo.ImportJobResponse;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.messaging.consumer.failure.ConsumerRetryPolicy;
+import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
 import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -317,7 +319,9 @@ class AsyncImportProcessorIntegrationTest {
                 row(accountNo, "ACK-LOSS", "31.00")
         );
         ImportJobMessageListener listener = new ImportJobMessageListener(
-                new ImportJobMessageHandler(transactionService)
+                new ImportJobMessageHandler(transactionService),
+                new ConsumerRetryPolicy(),
+                mock(ReliableConsumerForwarder.class)
         );
         JobRequestedMessage message = requestedMessage(accepted.id());
         Channel failedChannel = mock(Channel.class);
@@ -325,7 +329,12 @@ class AsyncImportProcessorIntegrationTest {
                 .when(failedChannel).basicAck(71L, false);
 
         assertThatThrownBy(() ->
-                listener.onMessage(message, failedChannel, 71L))
+                listener.onMessage(
+                        message,
+                        new org.springframework.amqp.core.Message(new byte[0]),
+                        failedChannel,
+                        71L
+                ))
                 .isInstanceOf(IOException.class)
                 .hasMessage("injected ACK failure");
 
@@ -338,7 +347,12 @@ class AsyncImportProcessorIntegrationTest {
         )).isEqualTo(1);
 
         Channel recoveredChannel = mock(Channel.class);
-        listener.onMessage(message, recoveredChannel, 72L);
+        listener.onMessage(
+                message,
+                new org.springframework.amqp.core.Message(new byte[0]),
+                recoveredChannel,
+                72L
+        );
 
         verify(recoveredChannel).basicAck(72L, false);
         assertThat(jdbcTemplate.queryForObject(

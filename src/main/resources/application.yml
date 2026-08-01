@@ -28,6 +28,12 @@ finguard:
       enabled: "${FINGUARD_IMPORT_CONSUMER_ENABLED:true}"
       concurrency: "${FINGUARD_IMPORT_CONSUMER_CONCURRENCY:1}"
       prefetch: "${FINGUARD_IMPORT_CONSUMER_PREFETCH:1}"
+    reconciliation-consumer:
+      enabled: "${FINGUARD_RECONCILIATION_CONSUMER_ENABLED:true}"
+      concurrency: "${FINGUARD_RECONCILIATION_CONSUMER_CONCURRENCY:1}"
+      prefetch: "${FINGUARD_RECONCILIATION_CONSUMER_PREFETCH:1}"
+    consumer-forward:
+      confirm-timeout: "${FINGUARD_CONSUMER_FORWARD_CONFIRM_TIMEOUT:5s}"
     outbox:
       enabled: "${FINGUARD_OUTBOX_ENABLED:true}"
       fixed-delay-ms: "${FINGUARD_OUTBOX_FIXED_DELAY_MS:1000}"

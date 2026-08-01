@@ -1,7 +1,7 @@
-package com.finguard.core.messaging.consumer.importjob;
+package com.finguard.core.messaging.consumer.reconciliation;
 
 import com.finguard.core.messaging.config.RabbitMessagingConfiguration;
-import com.finguard.core.messaging.consumer.config.ImportConsumerConfiguration;
+import com.finguard.core.messaging.consumer.config.ReconciliationConsumerConfiguration;
 import com.finguard.core.messaging.consumer.exception.InvalidJobRequestedMessageException;
 import com.finguard.core.messaging.consumer.failure.ConsumerFailureCode;
 import com.finguard.core.messaging.consumer.failure.ConsumerFlow;
@@ -10,8 +10,9 @@ import com.finguard.core.messaging.consumer.failure.ConsumerRetryPolicy;
 import com.finguard.core.messaging.consumer.failure.ConsumerRoute;
 import com.finguard.core.messaging.consumer.failure.InvalidRetryAttemptException;
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
-import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
+import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
+import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
 import com.rabbitmq.client.Channel;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -22,14 +23,14 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
-public class ImportJobMessageListener {
+public class ReconciliationJobMessageListener {
 
-    private final ImportJobMessageHandler handler;
+    private final ReconciliationJobMessageHandler handler;
     private final ConsumerRetryPolicy retryPolicy;
     private final ReliableConsumerForwarder forwarder;
 
-    public ImportJobMessageListener(
-            ImportJobMessageHandler handler,
+    public ReconciliationJobMessageListener(
+            ReconciliationJobMessageHandler handler,
             ConsumerRetryPolicy retryPolicy,
             ReliableConsumerForwarder forwarder) {
         this.handler = handler;
@@ -38,10 +39,11 @@ public class ImportJobMessageListener {
     }
 
     @RabbitListener(
-            queues = RabbitMessagingConfiguration.IMPORT_QUEUE,
-            containerFactory = ImportConsumerConfiguration.CONTAINER_FACTORY,
+            queues = RabbitMessagingConfiguration.RECONCILIATION_QUEUE,
+            containerFactory = ReconciliationConsumerConfiguration
+                    .CONTAINER_FACTORY,
             autoStartup =
-                    "${finguard.messaging.import-consumer.enabled:true}"
+                    "${finguard.messaging.reconciliation-consumer.enabled:true}"
     )
     public void onMessage(
             JobRequestedMessage message,
@@ -59,7 +61,10 @@ public class ImportJobMessageListener {
         } catch (InvalidRetryAttemptException exception) {
             forwardOrRequeue(
                     message,
-                    retryPolicy.deadLetter(ConsumerFlow.IMPORT, 0),
+                    retryPolicy.deadLetter(
+                            ConsumerFlow.RECONCILIATION,
+                            0
+                    ),
                     ConsumerFailureCode.INVALID_RETRY_ATTEMPT,
                     channel,
                     deliveryTag
@@ -73,19 +78,28 @@ public class ImportJobMessageListener {
         } catch (InvalidJobRequestedMessageException exception) {
             forwardOrRequeue(
                     message,
-                    retryPolicy.deadLetter(ConsumerFlow.IMPORT, attempt),
+                    retryPolicy.deadLetter(
+                            ConsumerFlow.RECONCILIATION,
+                            attempt
+                    ),
                     ConsumerFailureCode.INVALID_MESSAGE,
                     channel,
                     deliveryTag
             );
-        } catch (ImportJobNotFoundException exception) {
+        } catch (ReconciliationJobNotFoundException exception) {
             forwardOrRequeue(
                     message,
-                    retryPolicy.deadLetter(ConsumerFlow.IMPORT, attempt),
+                    retryPolicy.deadLetter(
+                            ConsumerFlow.RECONCILIATION,
+                            attempt
+                    ),
                     ConsumerFailureCode.TASK_NOT_FOUND,
                     channel,
                     deliveryTag
             );
+        } catch (InvalidReconciliationOperationException exception) {
+            handler.markBusinessFailed(message.aggregateId());
+            channel.basicAck(deliveryTag, false);
         } catch (RuntimeException exception) {
             handleTransientFailure(
                     message,
@@ -102,7 +116,7 @@ public class ImportJobMessageListener {
             Channel channel,
             long deliveryTag) throws IOException {
         ConsumerRoute route = retryPolicy.transientFailure(
-                ConsumerFlow.IMPORT,
+                ConsumerFlow.RECONCILIATION,
                 attempt
         );
         if (route.deadLetter()) {

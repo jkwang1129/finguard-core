@@ -96,4 +96,23 @@ public interface ImportJobMapper extends BaseMapper<ImportJob> {
             @Param("errorSummary") String errorSummary,
             @Param("finishedAt") LocalDateTime finishedAt
     );
+
+    @Update("""
+            UPDATE import_jobs
+            SET status = 'FAILED',
+                total_rows = 0,
+                success_rows = 0,
+                failed_rows = 0,
+                duplicate_rows = 0,
+                file_error_code = 'PROCESSING_FAILED',
+                error_summary = #{errorSummary},
+                finished_at = #{finishedAt}
+            WHERE id = #{importJobId}
+              AND status IN ('PENDING', 'PROCESSING')
+            """)
+    int failAfterRetryExhaustion(
+            @Param("importJobId") Long importJobId,
+            @Param("errorSummary") String errorSummary,
+            @Param("finishedAt") LocalDateTime finishedAt
+    );
 }

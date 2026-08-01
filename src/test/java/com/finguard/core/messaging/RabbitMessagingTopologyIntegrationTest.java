@@ -38,13 +38,12 @@ class RabbitMessagingTopologyIntegrationTest {
     }
 
     @Test
-    void shouldDeclareImportAndReconciliationQueues() {
-        assertThat(rabbitAdmin.getQueueProperties(
-                RabbitMessagingConfiguration.IMPORT_QUEUE))
-                .isNotNull();
-        assertThat(rabbitAdmin.getQueueProperties(
-                RabbitMessagingConfiguration.RECONCILIATION_QUEUE))
-                .isNotNull();
+    void shouldDeclareBusinessRetryAndDeadLetterQueues() {
+        for (String queue : allQueues()) {
+            assertThat(rabbitAdmin.getQueueProperties(queue))
+                    .as(queue)
+                    .isNotNull();
+        }
     }
 
     @Test
@@ -96,12 +95,87 @@ class RabbitMessagingTopologyIntegrationTest {
                 .isNull();
     }
 
-    private void purgeBusinessQueues() {
-        rabbitAdmin.purgeQueue(
+    @Test
+    void shouldDelayLevelOneRetriesAndReturnThemToMainQueues() {
+        String importMarker = "day6-import-retry-" + UUID.randomUUID();
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                RabbitMessagingConfiguration
+                        .IMPORT_RETRY_LEVEL_ONE_ROUTING_KEY,
+                importMarker
+        );
+        assertThat(rabbitTemplate.receiveAndConvert(
                 RabbitMessagingConfiguration.IMPORT_QUEUE,
-                false);
-        rabbitAdmin.purgeQueue(
+                1_000)).isNull();
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.IMPORT_QUEUE,
+                6_000)).isEqualTo(importMarker);
+
+        String reconciliationMarker =
+                "day6-reconciliation-retry-" + UUID.randomUUID();
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.RECONCILIATION_EXCHANGE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_RETRY_LEVEL_ONE_ROUTING_KEY,
+                reconciliationMarker
+        );
+        assertThat(rabbitTemplate.receiveAndConvert(
                 RabbitMessagingConfiguration.RECONCILIATION_QUEUE,
-                false);
+                1_000)).isNull();
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.RECONCILIATION_QUEUE,
+                6_000)).isEqualTo(reconciliationMarker);
+    }
+
+    @Test
+    void shouldRouteDeadLettersToTheMatchingDlq() {
+        String importMarker = "day6-import-dlq-" + UUID.randomUUID();
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.DEAD_LETTER_EXCHANGE,
+                RabbitMessagingConfiguration.IMPORT_REQUESTED_ROUTING_KEY,
+                importMarker
+        );
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.IMPORT_DLQ,
+                5_000)).isEqualTo(importMarker);
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.RECONCILIATION_DLQ,
+                250)).isNull();
+
+        String reconciliationMarker =
+                "day6-reconciliation-dlq-" + UUID.randomUUID();
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.DEAD_LETTER_EXCHANGE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_REQUESTED_ROUTING_KEY,
+                reconciliationMarker
+        );
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.RECONCILIATION_DLQ,
+                5_000)).isEqualTo(reconciliationMarker);
+        assertThat(rabbitTemplate.receiveAndConvert(
+                RabbitMessagingConfiguration.IMPORT_DLQ,
+                250)).isNull();
+    }
+
+    private void purgeBusinessQueues() {
+        for (String queue : allQueues()) {
+            rabbitAdmin.purgeQueue(queue, false);
+        }
+    }
+
+    private String[] allQueues() {
+        return new String[]{
+                RabbitMessagingConfiguration.IMPORT_QUEUE,
+                RabbitMessagingConfiguration.IMPORT_RETRY_LEVEL_ONE_QUEUE,
+                RabbitMessagingConfiguration.IMPORT_RETRY_LEVEL_TWO_QUEUE,
+                RabbitMessagingConfiguration.IMPORT_DLQ,
+                RabbitMessagingConfiguration.RECONCILIATION_QUEUE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_RETRY_LEVEL_ONE_QUEUE,
+                RabbitMessagingConfiguration
+                        .RECONCILIATION_RETRY_LEVEL_TWO_QUEUE,
+                RabbitMessagingConfiguration.RECONCILIATION_DLQ
+        };
     }
 }

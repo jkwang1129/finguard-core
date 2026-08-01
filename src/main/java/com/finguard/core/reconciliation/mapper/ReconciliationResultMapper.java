@@ -66,4 +66,13 @@ public interface ReconciliationResultMapper
             @Param("reconciliationJobId") Long reconciliationJobId,
             @Param("resultType") ReconciliationResultType resultType
     );
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM reconciliation_results
+            WHERE reconciliation_job_id = #{reconciliationJobId}
+            """)
+    long countByJobId(
+            @Param("reconciliationJobId") Long reconciliationJobId
+    );
 }

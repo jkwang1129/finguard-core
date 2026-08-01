@@ -16,6 +16,7 @@ import com.finguard.core.reconciliation.mapper.ReconciliationJobMapper;
 import com.finguard.core.reconciliation.mapper.ReconciliationResultMapper;
 import com.finguard.core.reconciliation.model.ReconciliationDecision;
 import com.finguard.core.reconciliation.model.ReconciliationJobStatus;
+import com.finguard.core.reconciliation.model.ReconciliationProcessingResult;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.reconciliation.model.ReconciliationTransaction;
 import com.finguard.core.reconciliation.service.ReconciliationMatcher;
@@ -41,6 +42,10 @@ public class ReconciliationJobTransactionService {
 
     private static final String PROCESSING_FAILED_MESSAGE =
             "Reconciliation processing failed";
+    private static final String RETRY_EXHAUSTED_MESSAGE =
+            "Reconciliation retry limit reached";
+    private static final String BUSINESS_FAILED_MESSAGE =
+            "Reconciliation input is no longer valid";
 
     private final ReconciliationJobMapper reconciliationJobMapper;
     private final OutboxEventMapper outboxEventMapper;
@@ -124,6 +129,55 @@ public class ReconciliationJobTransactionService {
     }
 
     @Transactional
+    public ReconciliationProcessingResult processPending(
+            Long reconciliationJobId) {
+        if (reconciliationJobId == null || reconciliationJobId <= 0) {
+            throw new IllegalArgumentException(
+                    "reconciliationJobId must be a positive number"
+            );
+        }
+        ReconciliationJob job = reconciliationJobMapper.findByIdForUpdate(
+                reconciliationJobId
+        );
+        if (job == null) {
+            throw new ReconciliationJobNotFoundException(
+                    reconciliationJobId
+            );
+        }
+        if (isTerminal(job.getStatus())) {
+            return ReconciliationProcessingResult.ALREADY_COMPLETED;
+        }
+
+        ReconciliationProcessingResult result;
+        if (job.getStatus() == ReconciliationJobStatus.PENDING) {
+            int updated = reconciliationJobMapper.markProcessing(
+                    reconciliationJobId,
+                    LocalDateTime.now(businessClock)
+            );
+            requireSingleStateUpdate(updated, reconciliationJobId);
+            result = ReconciliationProcessingResult.PROCESSED;
+        } else if (job.getStatus()
+                == ReconciliationJobStatus.PROCESSING) {
+            long existingResults = reconciliationResultMapper
+                    .countByJobId(reconciliationJobId);
+            if (existingResults != 0) {
+                throw new IllegalStateException(
+                        "Processing reconciliation job has persisted results"
+                );
+            }
+            result = ReconciliationProcessingResult.RECOVERED;
+        } else {
+            throw new IllegalStateException(
+                    "Reconciliation job status is not supported: "
+                            + job.getStatus()
+            );
+        }
+
+        processAndComplete(reconciliationJobId, job.getImportJobId());
+        return result;
+    }
+
+    @Transactional
     public void processAndComplete(
             Long reconciliationJobId,
             Long importJobId) {
@@ -151,6 +205,22 @@ public class ReconciliationJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, reconciliationJobId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean markRetryExhausted(Long reconciliationJobId) {
+        return markFailedIfNonTerminal(
+                reconciliationJobId,
+                RETRY_EXHAUSTED_MESSAGE
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean markBusinessFailed(Long reconciliationJobId) {
+        return markFailedIfNonTerminal(
+                reconciliationJobId,
+                BUSINESS_FAILED_MESSAGE
+        );
     }
 
     @Transactional(readOnly = true)
@@ -356,5 +426,43 @@ public class ReconciliationJobTransactionService {
                             + reconciliationJobId
             );
         }
+    }
+
+    private boolean markFailedIfNonTerminal(
+            Long reconciliationJobId,
+            String errorSummary) {
+        if (reconciliationJobId == null || reconciliationJobId <= 0) {
+            throw new IllegalArgumentException(
+                    "reconciliationJobId must be a positive number"
+            );
+        }
+        int updated = reconciliationJobMapper.failNonTerminal(
+                reconciliationJobId,
+                errorSummary,
+                LocalDateTime.now(businessClock)
+        );
+        if (updated == 1) {
+            return true;
+        }
+        ReconciliationJob current = reconciliationJobMapper.selectById(
+                reconciliationJobId
+        );
+        if (current == null) {
+            throw new ReconciliationJobNotFoundException(
+                    reconciliationJobId
+            );
+        }
+        if (isTerminal(current.getStatus())) {
+            return false;
+        }
+        throw new IllegalStateException(
+                "Reconciliation failure transition was rejected: "
+                        + reconciliationJobId
+        );
+    }
+
+    private boolean isTerminal(ReconciliationJobStatus status) {
+        return status == ReconciliationJobStatus.COMPLETED
+                || status == ReconciliationJobStatus.FAILED;
     }
 }
