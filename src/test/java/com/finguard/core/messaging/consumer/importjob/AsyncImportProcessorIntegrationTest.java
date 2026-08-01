@@ -3,10 +3,14 @@ package com.finguard.core.messaging.consumer.importjob;
 import com.finguard.core.importjob.mapper.ImportRowErrorMapper;
 import com.finguard.core.importjob.model.ImportFileErrorCode;
 import com.finguard.core.importjob.model.ImportJobStatus;
+import com.finguard.core.importjob.model.ImportProcessingResult;
 import com.finguard.core.importjob.service.ImportJobService;
 import com.finguard.core.importjob.service.impl.ImportJobTransactionService;
 import com.finguard.core.importjob.support.ImportJobTestFixture;
 import com.finguard.core.importjob.vo.ImportJobResponse;
+import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
+import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,14 +20,25 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class AsyncImportProcessorIntegrationTest {
@@ -80,7 +95,8 @@ class AsyncImportProcessorIntegrationTest {
                 "success.csv",
                 row(accountNo, "SUCCESS-1", "10.00")
         );
-        transactionService.processPending(success.id());
+        assertThat(transactionService.processPending(success.id()))
+                .isEqualTo(ImportProcessingResult.PROCESSED);
 
         ImportJobResponse completed = importJobService.getById(success.id());
         assertThat(completed.status()).isEqualTo(ImportJobStatus.SUCCESS);
@@ -89,13 +105,16 @@ class AsyncImportProcessorIntegrationTest {
         assertThat(completed.failedRows()).isZero();
         assertThat(completed.startedAt()).isNotNull();
         assertThat(completed.finishedAt()).isNotNull();
+        assertThat(transactionService.processPending(success.id()))
+                .isEqualTo(ImportProcessingResult.ALREADY_COMPLETED);
 
         ImportJobResponse partial = accept(
                 "partial.csv",
                 row(accountNo, "PARTIAL-OK", "5.00"),
                 row("MISSING_ACCOUNT", "PARTIAL-BAD", "5.00")
         );
-        transactionService.processPending(partial.id());
+        assertThat(transactionService.processPending(partial.id()))
+                .isEqualTo(ImportProcessingResult.PROCESSED);
 
         ImportJobResponse partialResult =
                 importJobService.getById(partial.id());
@@ -104,6 +123,13 @@ class AsyncImportProcessorIntegrationTest {
         assertThat(partialResult.totalRows()).isEqualTo(2);
         assertThat(partialResult.successRows()).isEqualTo(1);
         assertThat(partialResult.failedRows()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM import_row_errors WHERE import_job_id = ?",
+                Integer.class,
+                partial.id()
+        )).isEqualTo(1);
+        assertThat(transactionService.processPending(partial.id()))
+                .isEqualTo(ImportProcessingResult.ALREADY_COMPLETED);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM import_row_errors WHERE import_job_id = ?",
                 Integer.class,
@@ -120,7 +146,8 @@ class AsyncImportProcessorIntegrationTest {
                 ownerId
         );
 
-        transactionService.processPending(accepted.id());
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ImportProcessingResult.PROCESSED);
 
         ImportJobResponse result = importJobService.getById(accepted.id());
         assertThat(result.status()).isEqualTo(ImportJobStatus.FAILED);
@@ -131,6 +158,8 @@ class AsyncImportProcessorIntegrationTest {
                 Integer.class,
                 accepted.id()
         )).isZero();
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ImportProcessingResult.ALREADY_COMPLETED);
     }
 
     @Test
@@ -163,6 +192,23 @@ class AsyncImportProcessorIntegrationTest {
                 Integer.class,
                 accepted.id()
         )).isZero();
+
+        reset(importRowErrorMapper);
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ImportProcessingResult.PROCESSED);
+        ImportJobResponse recovered = importJobService.getById(accepted.id());
+        assertThat(recovered.status())
+                .isEqualTo(ImportJobStatus.PARTIAL_SUCCESS);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM import_row_errors WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
     }
 
     @Test
@@ -193,6 +239,120 @@ class AsyncImportProcessorIntegrationTest {
         )).isZero();
     }
 
+    @Test
+    void shouldSerializeConcurrentDeliveriesForTheSameJob()
+            throws Exception {
+        ImportJobResponse accepted = accept(
+                "concurrent.csv",
+                row(accountNo, "CONCURRENT", "12.34")
+        );
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<ImportProcessingResult> first = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return transactionService.processPending(accepted.id());
+            });
+            Future<ImportProcessingResult> second = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return transactionService.processPending(accepted.id());
+            });
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(List.of(
+                    first.get(10, TimeUnit.SECONDS),
+                    second.get(10, TimeUnit.SECONDS)
+            )).containsExactlyInAnyOrder(
+                    ImportProcessingResult.PROCESSED,
+                    ImportProcessingResult.ALREADY_COMPLETED
+            );
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        ImportJobResponse completed = importJobService.getById(accepted.id());
+        assertThat(completed.status()).isEqualTo(ImportJobStatus.SUCCESS);
+        assertThat(completed.totalRows()).isEqualTo(1);
+        assertThat(completed.successRows()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRecoverACommittedProcessingState() {
+        ImportJobResponse accepted = accept(
+                "recover-processing.csv",
+                row(accountNo, "RECOVER-PROCESSING", "22.22")
+        );
+        transactionService.markProcessing(accepted.id());
+
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ImportProcessingResult.RECOVERED);
+
+        ImportJobResponse completed = importJobService.getById(accepted.id());
+        assertThat(completed.status()).isEqualTo(ImportJobStatus.SUCCESS);
+        assertThat(completed.startedAt()).isNotNull();
+        assertThat(completed.finishedAt()).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void shouldCommitOnceWhenAckFailsAndDeliveryReturns()
+            throws Exception {
+        ImportJobResponse accepted = accept(
+                "ack-loss.csv",
+                row(accountNo, "ACK-LOSS", "31.00")
+        );
+        ImportJobMessageListener listener = new ImportJobMessageListener(
+                new ImportJobMessageHandler(transactionService)
+        );
+        JobRequestedMessage message = requestedMessage(accepted.id());
+        Channel failedChannel = mock(Channel.class);
+        doThrow(new IOException("injected ACK failure"))
+                .when(failedChannel).basicAck(71L, false);
+
+        assertThatThrownBy(() ->
+                listener.onMessage(message, failedChannel, 71L))
+                .isInstanceOf(IOException.class)
+                .hasMessage("injected ACK failure");
+
+        ImportJobResponse committed = importJobService.getById(accepted.id());
+        assertThat(committed.status()).isEqualTo(ImportJobStatus.SUCCESS);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+
+        Channel recoveredChannel = mock(Channel.class);
+        listener.onMessage(message, recoveredChannel, 72L);
+
+        verify(recoveredChannel).basicAck(72L, false);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM import_row_errors WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isZero();
+    }
+
     private ImportJobResponse accept(String fileName, String... rows) {
         return importJobService.upload(
                 fileName,
@@ -214,6 +374,19 @@ class AsyncImportProcessorIntegrationTest {
                 amount,
                 "2026-08-01 10:00:00",
                 "async processor test"
+        );
+    }
+
+    private JobRequestedMessage requestedMessage(Long importJobId) {
+        return new JobRequestedMessage(
+                "outbox-8105",
+                OutboxEventType.IMPORT_REQUESTED,
+                importJobId,
+                1,
+                OffsetDateTime.of(
+                        2026, 8, 1, 10, 0, 0, 0,
+                        ZoneOffset.ofHours(8)
+                )
         );
     }
 

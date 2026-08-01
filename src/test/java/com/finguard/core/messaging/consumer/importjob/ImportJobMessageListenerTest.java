@@ -1,5 +1,6 @@
 package com.finguard.core.messaging.consumer.importjob;
 
+import com.finguard.core.importjob.model.ImportProcessingResult;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
 import com.rabbitmq.client.Channel;
@@ -10,11 +11,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ImportJobMessageListenerTest {
 
@@ -28,6 +29,8 @@ class ImportJobMessageListenerTest {
     void shouldAcknowledgeOnlyAfterBusinessHandlerReturns()
             throws Exception {
         JobRequestedMessage message = message();
+        when(handler.handle(message))
+                .thenReturn(ImportProcessingResult.PROCESSED);
 
         listener.onMessage(message, channel, 17L);
 
@@ -40,8 +43,8 @@ class ImportJobMessageListenerTest {
     void shouldNotAcknowledgeWhenBusinessHandlerFails()
             throws Exception {
         JobRequestedMessage message = message();
-        doThrow(new IllegalStateException("injected failure"))
-                .when(handler).handle(message);
+        when(handler.handle(message))
+                .thenThrow(new IllegalStateException("injected failure"));
 
         assertThatThrownBy(() ->
                 listener.onMessage(message, channel, 18L))

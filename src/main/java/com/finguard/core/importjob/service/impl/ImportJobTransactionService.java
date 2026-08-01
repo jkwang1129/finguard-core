@@ -10,6 +10,7 @@ import com.finguard.core.importjob.mapper.ImportJobFileMapper;
 import com.finguard.core.importjob.mapper.ImportRowErrorMapper;
 import com.finguard.core.importjob.model.ImportFileErrorCode;
 import com.finguard.core.importjob.model.ImportJobStatus;
+import com.finguard.core.importjob.model.ImportProcessingResult;
 import com.finguard.core.importjob.model.ImportRowErrorCode;
 import com.finguard.core.importjob.parser.CsvImportFileParser;
 import com.finguard.core.importjob.parser.ParsedImportFile;
@@ -141,20 +142,38 @@ public class ImportJobTransactionService {
     }
 
     @Transactional
-    public void processPending(Long importJobId) {
+    public ImportProcessingResult processPending(Long importJobId) {
         if (importJobId == null || importJobId <= 0) {
             throw new IllegalArgumentException(
                     "importJobId must be a positive number"
             );
         }
-        ImportJob importJob = requireById(importJobId);
+        ImportJob importJob = importJobMapper.findByIdForUpdate(importJobId);
+        if (importJob == null) {
+            throw new ImportJobNotFoundException(importJobId);
+        }
+        if (isTerminal(importJob.getStatus())) {
+            return ImportProcessingResult.ALREADY_COMPLETED;
+        }
         PreparedImportFile preparedFile = restorePreparedFile(importJob);
-        int updated = importJobMapper.markProcessing(
-                importJobId,
-                LocalDateTime.now(businessClock)
-        );
-        requireSingleStateUpdate(updated, importJobId);
+        ImportProcessingResult result;
+        if (importJob.getStatus() == ImportJobStatus.PENDING) {
+            int updated = importJobMapper.markProcessing(
+                    importJobId,
+                    LocalDateTime.now(businessClock)
+            );
+            requireSingleStateUpdate(updated, importJobId);
+            result = ImportProcessingResult.PROCESSED;
+        } else if (importJob.getStatus() == ImportJobStatus.PROCESSING) {
+            result = ImportProcessingResult.RECOVERED;
+        } else {
+            throw new IllegalStateException(
+                    "Import job status is not supported: "
+                            + importJob.getStatus()
+            );
+        }
         processAndComplete(importJobId, preparedFile);
+        return result;
     }
 
     @Transactional
@@ -399,6 +418,12 @@ public class ImportJobTransactionService {
         return failedRows == 0
                 ? ImportJobStatus.SUCCESS
                 : ImportJobStatus.PARTIAL_SUCCESS;
+    }
+
+    private boolean isTerminal(ImportJobStatus status) {
+        return status == ImportJobStatus.SUCCESS
+                || status == ImportJobStatus.PARTIAL_SUCCESS
+                || status == ImportJobStatus.FAILED;
     }
 
     private int distinctFailedRows(

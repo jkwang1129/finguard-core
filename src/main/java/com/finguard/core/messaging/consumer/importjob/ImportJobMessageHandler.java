@@ -1,5 +1,6 @@
 package com.finguard.core.messaging.consumer.importjob;
 
+import com.finguard.core.importjob.model.ImportProcessingResult;
 import com.finguard.core.importjob.service.impl.ImportJobTransactionService;
 import com.finguard.core.messaging.consumer.exception.InvalidJobRequestedMessageException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
@@ -22,9 +23,9 @@ public class ImportJobMessageHandler {
         this.transactionService = transactionService;
     }
 
-    public void handle(JobRequestedMessage message) {
+    public ImportProcessingResult handle(JobRequestedMessage message) {
         validate(message);
-        transactionService.processPending(message.aggregateId());
+        return transactionService.processPending(message.aggregateId());
     }
 
     private void validate(JobRequestedMessage message) {

@@ -1,5 +1,6 @@
 package com.finguard.core.messaging.consumer.importjob;
 
+import com.finguard.core.importjob.model.ImportProcessingResult;
 import com.finguard.core.importjob.service.impl.ImportJobTransactionService;
 import com.finguard.core.messaging.consumer.exception.InvalidJobRequestedMessageException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
@@ -10,10 +11,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class ImportJobMessageHandlerTest {
 
@@ -25,8 +28,11 @@ class ImportJobMessageHandlerTest {
     @Test
     void shouldProcessValidatedImportMessage() {
         JobRequestedMessage message = validMessage();
+        when(transactionService.processPending(42L))
+                .thenReturn(ImportProcessingResult.PROCESSED);
 
-        handler.handle(message);
+        assertThat(handler.handle(message))
+                .isEqualTo(ImportProcessingResult.PROCESSED);
 
         verify(transactionService).processPending(42L);
     }

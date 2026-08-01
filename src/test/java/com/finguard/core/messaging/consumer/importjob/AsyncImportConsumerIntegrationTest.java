@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "finguard.messaging.import-consumer.enabled=true",
+                "finguard.messaging.import-consumer.concurrency=2",
                 "finguard.messaging.outbox.enabled=false"
         }
 )
@@ -130,6 +131,65 @@ class AsyncImportConsumerIntegrationTest {
                 externalNo
         )).isEqualTo(1);
         waitForQueueToDrain();
+    }
+
+    @Test
+    void shouldConsumeConcurrentDuplicateRabbitMessagesOnlyOnce()
+            throws Exception {
+        String externalNo = "DUPLICATE-" + token();
+        byte[] content = (HEADER + "\n"
+                + accountNo + "," + externalNo
+                + ",INCOME,28.88,2026-08-01 10:00:00,"
+                + "duplicate RabbitMQ test\n")
+                .getBytes(StandardCharsets.UTF_8);
+        ImportJobResponse accepted = importJobService.upload(
+                "duplicate-rabbit.csv",
+                content,
+                ownerId
+        );
+        JobRequestedMessage message = new JobRequestedMessage(
+                "outbox-9002",
+                OutboxEventType.IMPORT_REQUESTED,
+                accepted.id(),
+                1,
+                OffsetDateTime.of(
+                        2026, 8, 1, 10, 0, 0, 0,
+                        ZoneOffset.ofHours(8)
+                )
+        );
+
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                RabbitMessagingConfiguration.IMPORT_REQUESTED_ROUTING_KEY,
+                message
+        );
+        rabbitTemplate.convertAndSend(
+                RabbitMessagingConfiguration.IMPORT_EXCHANGE,
+                RabbitMessagingConfiguration.IMPORT_REQUESTED_ROUTING_KEY,
+                message
+        );
+
+        ImportJobResponse completed = waitForTerminal(accepted.id());
+        assertThat(completed.status()).isEqualTo(ImportJobStatus.SUCCESS);
+        assertThat(completed.totalRows()).isEqualTo(1);
+        assertThat(completed.successRows()).isEqualTo(1);
+        waitForQueueToDrain();
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM transactions
+                WHERE import_job_id = ?
+                  AND external_transaction_no = ?
+                """,
+                Integer.class,
+                accepted.id(),
+                externalNo
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM import_row_errors WHERE import_job_id = ?",
+                Integer.class,
+                accepted.id()
+        )).isZero();
     }
 
     private ImportJobResponse waitForTerminal(Long importJobId)

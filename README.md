@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 4 Day 4 已完成：导入和对账请求已改为异步受理；任务、原始 CSV 和 Outbox 意图由 MySQL 原子保存，再通过 Publisher Confirm + mandatory return 可靠发布。导入消费者会从数据库恢复文件、复用 Week 3 导入规则，并在业务事务提交后手动 ACK；导入消费租约/恢复、对账消费者、有限重试和 DLQ 留给后续 Day。
+当前进度为 Week 4 Day 5 已完成：导入和对账请求已改为异步受理；任务、原始 CSV 和 Outbox 意图由 MySQL 原子保存，再通过 Publisher Confirm + mandatory return 可靠发布。导入消费者会从数据库恢复文件、复用 Week 3 规则，并以任务行锁串行同任务的并发消息；终态重复投递直接幂等 ACK，事务异常整体回滚到 `PENDING`，数据库提交后 ACK 丢失也不会重复写入。对账消费者、有限重试和 DLQ 留给 Day 6。
 
 ## 当前技术基线
 
@@ -46,14 +46,14 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - CSV 文件请求检查、原始字节 SHA-256、严格 UTF-8/BOM 与 RFC 4180 结构解析；
 - CSV 六字段规范化与业务校验、批量账户解析、文件内重复和数据库重复判断；
 - 异步 CSV 受理、哈希幂等、原始字节持久化和任务/文件/Outbox 原子提交；
-- RabbitMQ 异步导入消费、消息契约校验、持久化文件一致性检查、单次导入事务和提交后手动 ACK；
+- RabbitMQ 异步导入消费、消息契约校验、持久化文件一致性检查、任务行锁、终态幂等、崩溃回滚恢复和提交后手动 ACK；
 - 导入任务详情和行错误分页；`ADMIN` 可上传，`ADMIN`、`REVIEWER` 可查询；
 - 对账任务和逐笔结果的 V6 持久层、外键/检查约束、导入任务唯一幂等和稳定结果分页；
 - 强流水号优先、金额/方向/三天时间窗口补充的一对一两阶段对账，输出 `MATCHED`、`UNMATCHED`、`DUPLICATE` 和 `SUSPICIOUS`；
 - 异步对账受理、任务详情和结果类型筛选；`ADMIN` 可触发，`ADMIN`、`REVIEWER` 可查询；
 - 500 条分批候选查询与结果写入、并发触发幂等、结果/统计原子提交和独立失败恢复；
 - RabbitMQ durable 基础拓扑、持久化 JSON 消息、稳定消息 ID、correlated confirm、mandatory return、Outbox 发布退避和定时 Relay；
-- 251 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引和应用健康验收。
+- 255 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引和应用健康验收。
 
 ## 本地运行
 
@@ -199,7 +199,7 @@ GET    /api/reconciliation-jobs/{reconciliationJobId}/results?page=1&size=20&res
 
 - 尚未实现风险识别、异常审核和审计；
 - 导入消费者已经接入；对账消费者尚未接入，因此新对账任务仍保持 `PENDING`；
-- 尚未实现导入消费幂等租约/宕机恢复、对账消费者、消费重试、DLQ、失败任务强制重跑或覆盖导入；
+- 导入消费者采用单事务行锁，因此正常处理中间态不会独立提交，也不提供跨事务可见的处理租约；尚未实现对账消费者、有限消费重试、DLQ、失败任务强制重跑或覆盖导入；
 - 不提供复杂模糊匹配、金额容差或人工确认；Redis 尚未引入。
 
 ## 当前范围

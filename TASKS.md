@@ -30,6 +30,7 @@
 | Week 4 Day 2 | 已完成 | RabbitMQ 依赖、Docker 服务、连接配置、导入/对账基础拓扑、真实连接和健康验收完成 |
 | Week 4 Day 3 | 已完成 | V7、原始文件持久化、Outbox、202 异步受理、Confirm/return 与发布退避已完成真实验收 |
 | Week 4 Day 4 | 已完成 | 异步导入消费者、数据库业务事务、提交后手动 ACK 和真实验收完成 |
+| Week 4 Day 5 | 已完成 | 导入消费幂等、任务行锁、ACK 丢失红投和消费者崩溃恢复已完成真实验收 |
 | Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
@@ -909,6 +910,73 @@
 - **回滚**：只回退 Day 4 新增的消费者、配置、测试和对导入 Service/Mapper 的最小改造；不修改或删除 V7。回滚后 HTTP 仍可可靠受理并发布消息，但导入任务会保持 `PENDING`，与 Day 3 基线一致。
 - **提交**：`feat: add asynchronous import consumer`
 
+### Week 4 Day 5：导入消费幂等、并发所有权与崩溃恢复
+
+- **状态**：已完成
+- **业务目标**：补齐“至少一次投递”下的导入消费可靠性：同一 `IMPORT_REQUESTED` 消息被重复发布、并发投递或在数据库已提交但 ACK 丢失后再次投递时，只允许一份业务结果；消费者在处理前或处理中崩溃后，任务能够重新被安全处理，不能永久卡在 `PROCESSING`。
+- **实现前基线**：Day 4 已能从真实 RabbitMQ 消费导入消息，在一个数据库事务内读取持久化 CSV、推进任务状态、写入交易/行错误和终态统计，并在事务成功返回后手动 ACK；但终态重复消息、同任务并发消费、ACK 失败后的红投以及异常退出恢复尚未形成确定性行为。
+- **目标流程**：
+  ```text
+  收到 IMPORT_REQUESTED
+    → 校验消息并以 importJobId 查询数据库真源
+    → 原子判断本次消费是否取得处理所有权
+      → PENDING：唯一执行者处理导入
+      → 已是终态：幂等返回，不重复写入
+      → 正在处理：按已锁定的所有权/恢复规则处理，不盲目执行第二次
+    → 业务事务提交后 ACK
+    → 若提交后 ACK 丢失，红投读取终态并直接幂等 ACK
+    → 若执行者崩溃，数据库回滚后由红投重新处理
+  ```
+- **范围边界**：
+  - 本日只加强导入消费者，不实现对账消费者；对账消费者仍留给 Day 6。
+  - 本日处理重复消息、同任务并发抢占、数据库提交后 ACK 丢失、消费者崩溃和 `PROCESSING` 恢复；业务规则、CSV 契约、文件哈希、交易唯一键和 HTTP `202 + Location` 语义保持不变。
+  - 验证确认 Day 4 的 `PROCESSING` 不会独立提交，崩溃会整体回滚到 `PENDING`；本日使用任务行锁形成处理所有权，不增加没有实际作用的租约字段。
+  - 本日没有新增 V8，也没有修改 V1～V7；未来若让 `PROCESSING` 跨事务可见，必须同时设计 token、租约、fencing 和有限延迟重试。
+  - 两级 retry queue、重试次数、TTL 退避、非法消息隔离和 DLQ 属于 Day 6；本日不得用无限 `requeue=true` 或忙循环冒充崩溃恢复。
+  - 不引入 Redis 分布式锁、Redisson、通用工作流框架、风险规则、人工审核、审计、监控或前端。
+- **关键设计决定**：
+  - 数据库任务状态是消费幂等真源，RabbitMQ `deliveryTag` 只用于当前 Channel ACK，不能作为跨投递幂等键。
+  - 同一任务的所有权取得必须是数据库原子操作；不能先普通查询 `PENDING`，再无条件执行导入。
+  - 终态 `SUCCESS / PARTIAL_SUCCESS / FAILED` 的重复消息必须返回“已处理”结果并 ACK，不抛出状态迁移异常形成毒消息。
+  - 并发消费者只能有一个进入解析和写入阶段；未取得所有权的消费者不得新增交易、行错误或覆盖统计。
+  - 数据库已提交但 `basicAck` 失败时，后续红投只能读取既有终态并 ACK；交易唯一键是最后防线，不能代替 Service 层幂等。
+  - 消费者崩溃恢复必须有可证明的唯一策略：要么同一事务整体回滚到 `PENDING`，要么使用带 fencing token 的持久化所有权和过期恢复；禁止仅凭看到 `PROCESSING` 就永久 ACK。
+- **执行顺序**：
+  1. 新增 Day 5 设计文档，画出重复投递、并发抢占、ACK 丢失和崩溃恢复时序，先锁定状态决策表与事务边界。
+  2. 为当前 `processPending` 增加故障与并发实验，确认 MySQL 行锁、事务回滚和 RabbitMQ 红投的真实行为，再决定是否需要 V8 token/lease。
+  3. 把导入处理入口改为返回明确消费结果（首次取得、终态重复、正在处理/可恢复），让 Listener 只对可安全结束的结果 ACK。
+  4. 实现数据库原子所有权、终态幂等短路和旧执行者防护；如采用租约，补齐过期判断、可注入 `Clock`、恢复条件和迁移约束。
+  5. 增加重复顺序投递、至少两个消费者并发、提交后 ACK 失败、进程/事务异常和恢复重跑测试，逐项核对任务统计及数据库副作用。
+  6. 使用真实 MySQL + RabbitMQ 完成 HTTP 上传、重复发布、并发消费、强制断开消费者、重启恢复和队列清零验收。
+  7. 运行聚焦测试和完整 `mvn clean test`，清理任务、交易、行错误、原始文件、Outbox、RabbitMQ 消息和临时端口，执行 `git diff --check` 与范围审计。
+- **任务**：
+  - [x] 新增 `docs/design/week4-day5-import-consumer-idempotency-design.md`，锁定状态决策表、事务可见性、所有权和恢复策略。
+  - [x] 用自动化实验覆盖当前单事务下的并发条件更新、回滚和终态可见性，并确认不需要 V8。
+  - [x] 实现终态重复消息幂等短路，重复消费不再因 `PENDING → PROCESSING` 更新数为 0 而持续失败。
+  - [x] 实现同一 `importJobId` 的数据库行锁所有权，两个消费者并发时只有一个执行业务逻辑。
+  - [x] 实现数据库提交后 ACK 失败的红投恢复，第二次消费只 ACK、不新增任何业务记录。
+  - [x] 实现消费者在处理前/处理中异常退出后的安全恢复，任务不会永久停留在 `PROCESSING`。
+  - [x] 设计与测试证明单事务回滚足以恢复，因此没有增加无实际作用的 V8 token/lease。
+  - [x] 完成聚焦、完整回归及真实 MySQL/RabbitMQ/HTTP 验收，并清理所有验收副作用。
+- **关键文件**：
+  - `docs/design/week4-day5-import-consumer-idempotency-design.md`
+  - `src/main/java/com/finguard/core/messaging/consumer/importjob/`
+  - `src/main/java/com/finguard/core/importjob/service/impl/ImportJobTransactionService.java`
+  - `src/main/java/com/finguard/core/importjob/mapper/ImportJobMapper.java`
+  - `src/test/java/com/finguard/core/messaging/consumer/importjob/`
+- **验收标准**：
+  - 同一消息顺序投递至少 2 次，最终只有 1 个任务、1 份正确的交易/行错误集合和一套守恒统计；第二次安全 ACK。
+  - 至少两个真实消费者同时处理同一任务时，只有一个取得所有权并执行；另一消费者不产生业务副作用，任务最终处于唯一正确终态。
+  - 注入“业务事务已提交、`basicAck` 抛出异常”后，RabbitMQ 红投不会重复写交易或行错误，最终消息可确认、队列 `ready=0/unacked=0`。
+  - 注入消费者在取得任务后异常退出，重启或再次投递后任务能够完成；不存在永久 `PROCESSING`、旧执行者覆盖新结果或半套数据。
+  - 对成功、部分成功、文件级失败三类终态都验证重复消费；任务计数、交易数、行错误数和文件哈希幂等关系保持不变。
+  - 聚焦测试和完整 `mvn clean test` 全部通过；真实 MySQL/RabbitMQ/HTTP 验收、数据/消息/端口清理和 `git diff --check` 全部完成。
+- **验收结论**：Day 5 聚焦测试 13/13、完整 `mvn clean test` 255/255 通过，零失败、零错误、零跳过。真实 Java 17 应用首次上传返回 `202/PENDING`；消费者关闭时主队列保留 1 条消息，重启后任务完成为 `SUCCESS|1|1|0`。应用再次停止后发布 2 条同任务重复消息，以 2 个消费者重启并发处理，最终仍只有 1 条交易、0 条行错误，队列 `ready=0/unacked=0`。验收用户、账户、任务、文件、Outbox、消息和端口 `18080` 已清理；当前没有残留 `PROCESSING` 任务。
+- **学习重点**：至少一次投递、幂等与去重的区别、数据库条件更新、悲观行锁、事务可见性、RabbitMQ 红投标记、ACK 丢失窗口、fencing token、处理租约、崩溃恢复和数据库唯一约束兜底。
+- **常见错误预防**：不要用内存 `Set` 记录已消费消息；不要把 `deliveryTag` 当业务幂等键；不要看到终态还重新解析文件；不要把更新数为 0 一律当系统异常；不要在没有 fencing 的情况下允许过期执行者继续提交；不要提前实现 Day 6 的无限重试或 DLQ。
+- **回滚**：Listener/Handler/Service/Mapper 和测试可按本日范围回退；本日没有数据库迁移。回滚后恢复到 Day 4 的单次异步消费能力，已完成的任务和交易不得删除或重放。
+- **提交**：`feat: make import consumption idempotent`
+
 ## 7. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -916,7 +984,7 @@
 | 阶段 | 候选交付 |
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
-| Week 4 | Day 1～Day 4 已完成；后续完成导入消费幂等、处理租约、对账消费者、重试和死信队列 |
+| Week 4 | Day 1～Day 5 已完成；后续完成对账消费者、有限重试和死信队列 |
 | Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
@@ -950,4 +1018,5 @@
 | Week 4 Day 1 异步消息契约设计 | `996c013` |
 | Week 4 Day 2 RabbitMQ 基础设施 | `7f77980` |
 | Week 4 Day 3 Outbox 可靠发布 | `bfd9a25` |
-| Week 4 Day 4 异步导入消费者 | 见本次提交 |
+| Week 4 Day 4 异步导入消费者 | `e6c6edf` |
+| Week 4 Day 5 导入消费幂等与崩溃恢复 | 见本次提交 |
