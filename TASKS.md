@@ -34,7 +34,7 @@
 | Week 4 Day 6 | 已完成 | 异步对账消费者、两级有限重试、失败分类、DLQ 隔离和真实验收完成 |
 | Week 4 Day 7 | 已完成 | 综合验收真实异步闭环、可靠性故障路径、幂等、清理并完成周复盘 |
 | Week 5 Day 1 | 已完成 | 风险、审核、Redis、审计契约与 Day 2～Day 6 实现边界已锁定 |
-| Week 5 Day 2 | 待开始 | 风险命中持久层与规则执行骨架 |
+| Week 5 Day 2 | 已完成 | V8 风险命中真源、批量持久层、规则契约和真实验收完成 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1208,23 +1208,98 @@
 
 ### Week 5 Day 2：风险命中持久层与规则执行骨架
 
-- **状态**：未开始
-- **业务目标**：建立可追踪、可去重的风险命中真源，并用简单策略接口承载规则，后续审核不能只依赖内存计算结果。
-- **范围边界**：只完成追加迁移、风险模块持久层、规则接口和纯规则测试；不开放审核写接口，不接入 Redis，不实现审计日志，不修改 V1～V7。
+- **状态**：已完成
+- **业务目标**：建立可追踪、可去重、可解释的风险命中 MySQL 真源，并定义稳定的规则输入/输出契约，使 Day 3 能在不改表、不推翻接口的前提下实现三条具体规则和审核任务生成。
+- **当前基线**：
+  - Week 5 Day 1 已在提交 `71b432d` 完成契约设计；进入 Day 2 时的完整回归基线为 287/287，实际执行后必须记录本日新数字，不能复制历史结果。
+  - 进入 Day 2 时 Flyway 最新版本为 V7，共 11 张业务表；`reconciliation_results` 已通过真实外键唯一关联本次对账任务和 CSV 交易，因此 V8 只引用 `reconciliation_results.id`，不重复保存 job/transaction 外键。
+  - 进入 Day 2 时仓库没有 `risk` 包、`risk_hits` 表、风险规则实现或审核任务；本日只建立持久化与契约基础，不把计划描述成现有能力。
+- **本日数据流**：
+
+  ```text
+  测试或后续编排层提供已持久化的 ReconciliationResult + CSV 交易
+    → 组装只读 RiskEvaluationContext
+    → 按统一 RiskRule 契约计算 Optional<RiskRuleResult>
+    → 无命中：不创建空记录
+    → 有命中：转换为 RiskHit
+    → 批量写入 risk_hits
+    → 按 reconciliation_result_id 批量回查持久化结果
+  ```
+
+  Day 2 只证明这条“契约 → 持久化”路径可用；不接入现有 `ReconciliationJobTransactionService`，不随真实 RabbitMQ 对账消息自动执行。
+- **范围边界**：
+  - 只新增 Day 2 设计文档、V8、风险枚举/实体/Mapper、不可变规则契约模型及对应单元/集成测试。
+  - 不实现 `LargeAmountRule`、`DuplicateTransactionRule`、`FrequentTransactionRule`、`RiskProperties` 或 `RiskEvaluationService`；具体规则、批量候选查询和对账事务接入属于 Day 3。
+  - 不新增 `review_tasks`、审核接口、乐观锁、审计日志、统计接口、Redis、限流、RabbitMQ 拓扑或消息字段。
+  - 不新增 Controller、HTTP 路由或权限规则，不修改 `ReconciliationJobTransactionService`，不改变现有导入/对账运行行为。
+  - 不修改已应用的 V1～V7；V8 一旦应用只能由后续追加迁移演进，不能回写 V8 或通过删除共享数据卷冒充回滚。
+- **执行顺序**：
+  1. 重新核对 Day 1 的规则/原因码、字段形状、索引与 Day 3 接入需求，形成 `week5-day2-risk-persistence-and-rule-engine-design.md`。
+  2. 先写数据库约束与持久层失败测试，明确合法三种记录形状、非法组合、重复命中、未知外键和删除限制的预期结果。
+  3. 新增 V8，仅创建 `risk_hits`；同步更新 Flyway 最新版本、业务表数量和 schema 约束断言。
+  4. 建立 `RiskRuleCode`、`RiskReasonCode`、`RiskHit` 和 `RiskHitMapper`，实现批量插入及按一批对账结果 ID 稳定回查，避免给 Day 3 留下逐条 SQL 的接口。
+  5. 定义不可变的 `RiskRule`、`RiskEvaluationContext`、`RiskRuleResult`；锁定空值、正数、金额 scale、规则/原因匹配和固定安全摘要边界，但不写具体规则实现。
+  6. 运行规则模型单测、风险持久层集成测试和数据库基线测试；在真实 MySQL 上检查表、列、CHECK、FK、唯一键、索引及 `EXPLAIN`。
+  7. 执行完整 `mvn clean test`、应用健康检查、测试数据/端口清理、敏感信息检查、范围审计和 `git diff --check`。
+  8. 回填实际测试数字与验收结论，确认没有 Day 3～Day 6 能力后再提交。
+- **关键设计决定**：
+  - `risk_hits` 只保存 `reconciliation_result_id`；通过该结果可追溯到 reconciliation job 和 CSV transaction，避免三份外键产生关系不一致。
+  - 幂等最终由 `uk_risk_hits_result_rule(reconciliation_result_id, rule_code)` 保证；Java 预检查只能改善错误表达，不能替代唯一约束，也不使用 `INSERT IGNORE` 吞掉其他数据错误。
+  - 三组规则/原因固定配对：`LARGE_AMOUNT/AMOUNT_AT_OR_ABOVE_THRESHOLD`、`POSSIBLE_DUPLICATE/SAME_ACCOUNT_DIRECTION_AMOUNT_NEAR_TIME`、`FREQUENT_TRANSACTION/EXPENSE_COUNT_AT_OR_ABOVE_THRESHOLD`。
+  - 大额记录只填 `observed_amount/threshold_amount`；重复与高频记录只填 `observed_count/threshold_count/window_seconds`。所有已填金额、次数、阈值和窗口必须为正，观测值必须达到对应阈值。
+  - `reason_summary` 只能由服务端固定模板产生，最长 255 字符，不保存交易描述、原始 CSV、配置 JSON、SQL、异常消息或堆栈。
+  - `RiskRule` 只计算并返回 `Optional<RiskRuleResult>`，不得访问 Mapper、开启事务、写风险命中、创建审核任务或修改交易/对账结果。
+  - 规则顺序使用显式 order 或 `RiskRuleCode` 固定次序保证 `LARGE_AMOUNT → POSSIBLE_DUPLICATE → FREQUENT_TRANSACTION`；顺序仅用于确定性输出，不表示覆盖关系，一个结果允许命中多条不同规则。
+  - Mapper 提供批量写入和批量回查；Day 2 不创建空 `Service` 包装 `BaseMapper`，事务编排统一留给 Day 3 的 `RiskEvaluationService`。
 - **任务**：
-  - [ ] 新增 `V8__create_risk_hit_table.sql`，创建风险命中表并落实规则代码、业务对象、原因、阈值快照、命中时间和唯一幂等约束；同步更新最新 Flyway 版本和表数量断言。
-  - [ ] 建立 `risk` 模块的 Entity、Mapper、枚举、查询模型和 Service 边界。
-  - [ ] 定义统一 `RiskRule` 接口与 `RiskRuleResult`，由 Spring 注入有序规则集合，不使用反射或硬编码 `if/else` 总开关。
-  - [ ] 先实现规则输入规范化和确定性规则骨架，金额继续使用 `BigDecimal`，时间继续使用固定业务时区。
-  - [ ] 覆盖迁移、外键、唯一约束、Mapper、规则启停、阈值边界和无命中路径测试。
+  - [x] 新增 Day 2 设计文档，逐项列出业务目的、请求/数据流、V8 DDL、Java 契约、测试矩阵、失败路径、回滚和 Day 3 接口。
+  - [x] 新增 `V8__create_risk_hit_table.sql`，包含主键、`reconciliation_result_id` RESTRICT 外键、三组规则/原因与字段形状 CHECK、正数 CHECK、唯一幂等键和规则统计索引。
+  - [x] 将全部最新 Flyway 版本断言更新为 8、业务表数量更新为 12，并验证 V8 表、外键、唯一键、CHECK 和索引真实存在。
+  - [x] 新增 `RiskRuleCode`、`RiskReasonCode`，禁止自由字符串进入持久层，并提供稳定的规则/原因匹配关系。
+  - [x] 新增 `RiskHit` 实体，金额使用 `BigDecimal`，时间使用 `LocalDateTime` 映射 MySQL `DATETIME(3)`，不使用 `double` 或 Java 原生序列化对象。
+  - [x] 新增 `RiskHitMapper`，支持非空列表批量插入、按一批 `reconciliationResultId` 回查，并按固定业务规则次序提供确定性结果。
+  - [x] 新增 `RiskRule`、`RiskEvaluationContext`、`RiskRuleResult`；使用只读模型表达当前交易、对账结果、批量预加载候选、业务时区和命中快照，不暴露可变集合。
+  - [x] 为规则契约模型增加快速失败校验：必填 ID/交易/时区、金额 scale 不超过 2、数值为正、规则与原因/快照字段形状一致、摘要非空且不超长。
+  - [x] 新增 `RiskHitPersistenceIntegrationTest`：覆盖三种合法形状往返、批量插入/回查、相同结果不同规则可共存、相同结果同规则唯一冲突、未知结果外键、结果删除 RESTRICT 和全部非法 CHECK 组合。
+  - [x] 新增规则契约单测：覆盖命中/无命中返回形状、不可变候选集合、规则顺序、金额精度、空值与非法快照拒绝；不伪造三条具体规则的业务边界测试。
+  - [x] 使用真实 MySQL 从空库执行 V1→V8，核对 V1～V7 checksum 不变，并以 `EXPLAIN` 证明批量回查和规则筛选命中预期索引。
+  - [x] 运行风险聚焦测试、数据库基线测试和完整 `mvn clean test`，记录实际 total/failures/errors/skipped；启动应用验证 `/actuator/health` 为 `UP`，随后清理数据和监听端口。
+  - [x] 执行敏感信息检查、Day 3～Day 6 范围审计和 `git diff --check`，回填验收证据后提交。
 - **关键文件**：
   - `docs/design/week5-day2-risk-persistence-and-rule-engine-design.md`
   - `src/main/resources/db/migration/V8__create_risk_hit_table.sql`
-  - `src/main/java/com/finguard/core/risk/`
-  - `src/test/java/com/finguard/core/risk/`
+  - `src/main/java/com/finguard/core/risk/entity/RiskHit.java`
+  - `src/main/java/com/finguard/core/risk/mapper/RiskHitMapper.java`
+  - `src/main/java/com/finguard/core/risk/model/RiskRuleCode.java`
+  - `src/main/java/com/finguard/core/risk/model/RiskReasonCode.java`
+  - `src/main/java/com/finguard/core/risk/rule/RiskRule.java`
+  - `src/main/java/com/finguard/core/risk/rule/RiskRuleResult.java`
+  - `src/main/java/com/finguard/core/risk/rule/RiskEvaluationContext.java`
+  - `src/test/java/com/finguard/core/risk/RiskHitPersistenceIntegrationTest.java`
+  - `src/test/java/com/finguard/core/risk/rule/RiskRuleContractTest.java`
   - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
-- **验收**：干净 MySQL 可从 V1 迁移到最新版本；同一规则与业务对象的重复命中只保留一条；规则边界和持久层测试通过，完整 `mvn clean test` 与 `git diff --check` 通过。
-- **提交建议**：`feat: add risk persistence and rule foundation`
+  - `src/test/java/com/finguard/core/auth/AuthDatabaseIntegrationTest.java`
+  - `src/test/java/com/finguard/core/importjob/ImportJobPersistenceIntegrationTest.java`
+  - `src/test/java/com/finguard/core/reconciliation/support/ReconciliationTestFixture.java`
+- **验收清单**：
+  - [x] Day 2 设计文档与 Day 1 契约一致，且能直接指导 V8、Java 模型、Mapper 和测试实现。
+  - [x] 干净 MySQL 从 V1→V8 成功，V1～V7 未修改，12 张业务表及 V8 全部约束/索引可由 `information_schema` 复核。
+  - [x] 三种合法风险命中均可往返持久化；非法 rule/reason/shape/数值由 Java 模型或 MySQL 约束拒绝，且不残留半套数据。
+  - [x] 同一对账结果可保存不同规则命中；同一结果与同一规则重复写入被唯一键拒绝，只保留一条真源记录。
+  - [x] 未知 `reconciliation_result_id` 不能写入，存在风险证据的对账结果不能删除；真实删除规则为 `RESTRICT`。
+  - [x] 批量 Mapper 路径不存在逐结果查询/写入的 N+1，返回顺序稳定，真实 `EXPLAIN` 使用预期索引。
+  - [x] `RiskRule` 契约是纯计算、输入输出只读且金额精确；无命中不创建空 `risk_hits`，一个结果允许多个不同规则命中。
+  - [x] 聚焦测试、数据库基线测试和完整 `mvn clean test` 均为本日实跑，0 failures、0 errors、0 skipped。
+  - [x] 应用健康检查为 `UP`，验收数据和端口已清理，敏感信息检查、范围审计与 `git diff --check` 通过。
+- **验收结论**：Day 2 风险持久层与规则契约已完成。风险/数据库聚焦测试 18/18、包含历史版本断言的扩展聚焦测试 30/30、完整 `mvn clean test` 297/297 通过，均为 0 failures、0 errors、0 skipped。独立空库从 V1→V8 成功，12 张业务表存在且 V1～V7 的 7 个 checksum 全部一致；真实 `EXPLAIN` 分别使用 `uk_risk_hits_result_rule` 和 `idx_risk_hits_rule_created_id`。真实应用在临时 256-bit JWT 密钥与 18080 端口下返回 `HTTP 200 {"status":"UP"}`；风险测试数据、临时验收库、RabbitMQ 消息和端口均已清理。
+- **学习重点**：
+  - 必须掌握：追加式 Flyway 迁移、外键/唯一键/CHECK 的职责差异、`BigDecimal` 精度、MyBatis 批量 SQL、策略接口、不可变输入输出和数据库最终幂等。
+  - 边做边学：规则/原因码配对约束、合法数据形状建模、批量回查、稳定排序、`information_schema` 与 `EXPLAIN` 验证。
+  - 留到 Day 3：类型安全规则配置、三条具体算法、时间窗口、滑动窗口、批量候选查询、风险评估事务和审核任务生成。
+  - 本日不学不做：审核 HTTP/乐观锁、审计、Redis 缓存/限流、规则 DSL、Drools、机器学习评分或 Week 6 监控部署。
+- **常见错误预防**：不要修改 V6/V7 给风险表“腾位置”；不要重复保存 jobId/transactionId 制造三份关系；不要用 `INSERT IGNORE` 隐藏非预期约束错误；不要只在 Java 校验而缺少数据库兜底；不要用 `double` 或无 scale 边界的金额；不要让规则对象访问 Mapper；不要为接口而创建空 Service；不要把 Day 3 的具体规则、对账事务接入或 `review_tasks` 偷跑进本日；不要把历史 287/287 当作 Day 2 验收数字。
+- **回滚**：Java、测试和设计文档可按本日文件范围回退；若 V8 只应用在确认可重建的项目测试库，可随测试环境重建回到 V7。若 V8 已进入共享或需保留数据的环境，不得修改/删除已应用迁移，只能新增补偿迁移；回滚不得删除已有对账结果、MySQL/RabbitMQ 数据卷或 Week 4 能力。
+- **提交**：`feat: add risk persistence and rule foundation`
 
 ### Week 5 Day 3：三条风险规则与审核任务生成
 
@@ -1391,4 +1466,5 @@
 | Week 4 Day 5 导入消费幂等与崩溃恢复 | `be4779b` |
 | Week 4 Day 6 异步对账、有限重试与死信隔离 | `0015610` |
 | Week 4 Day 7 综合验收 | `c7a1156` |
-| Week 5 Day 1 风险、审核、Redis 与审计契约设计 | 本次提交 |
+| Week 5 Day 1 风险、审核、Redis 与审计契约设计 | `71b432d` |
+| Week 5 Day 2 风险命中持久层与规则契约骨架 | 本次提交 |
