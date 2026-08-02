@@ -284,7 +284,10 @@ class RbacAuthorizationIntegrationTest {
                 get("/api/transactions/1"),
                 post("/api/transactions"),
                 put("/api/transactions/1"),
-                delete("/api/transactions/1")
+                delete("/api/transactions/1"),
+                get("/api/review-tasks"),
+                get("/api/review-tasks/1"),
+                patch("/api/review-tasks/1/decision")
         );
 
         for (MockHttpServletRequestBuilder request : requests) {
@@ -317,6 +320,15 @@ class RbacAuthorizationIntegrationTest {
                 .andExpect(header().doesNotExist(
                         HttpHeaders.WWW_AUTHENTICATE
                 ))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(get("/api/review-tasks").with(noAuthorities))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(patch("/api/review-tasks/1/decision")
+                        .with(noAuthorities))
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 

@@ -36,7 +36,7 @@
 | Week 5 Day 1 | 已完成 | 风险、审核、Redis、审计契约与 Day 2～Day 6 实现边界已锁定 |
 | Week 5 Day 2 | 已完成 | V8 风险命中真源、批量持久层、规则契约和真实验收完成 |
 | Week 5 Day 3 | 已完成 | 三条风险规则、V9 审核任务真源、任务生成与对账事务接入已完成真实验收 |
-| Week 5 Day 4 | 下一里程碑 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵 |
+| Week 5 Day 4 | 已完成 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵已完成真实验收 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1408,24 +1408,103 @@
 
 ### Week 5 Day 4：异常审核接口与乐观锁并发控制
 
-- **状态**：未开始
-- **业务目标**：允许 REVIEWER 查询异常并执行确认或忽略，同时保证两个审核人并发提交时只有一个状态迁移成功。
-- **范围边界**：只实现审核查询、决策、状态校验、乐观锁和权限矩阵；不使用 Redis 锁、数据库悲观长事务、通用工作流框架或审核撤销/重开功能。
+- **状态**：已完成
+- **业务目标**：把 Day 3 已生成的 `PENDING(version=0)` 审核任务开放为可查询、可解释且只能决策一次的人工审核流程；允许 REVIEWER 确认或忽略，同时保证两个审核人基于同一版本并发提交时只有一个状态迁移成功。
+- **当前基线**：
+  - Week 5 Day 3 已在提交 `5128247` 完成；当前真实能力是三条风险规则、V8 风险命中、V9 审核任务、任务幂等生成和对账事务原子接入，没有审核 Controller、查询/决策 Service 或新权限规则。
+  - 数据库最新版本为 V9，共 13 张业务表；`review_tasks` 已有两种真实来源外键、`PENDING/CONFIRMED/IGNORED` 状态 CHECK、`version`、审核人/时间/说明字段和两个分页索引。
+  - 进入本日的完整回归历史基线是 314/314；Day 4 完成后必须重新实跑并记录新数字，不能直接复制该结果。
+- **请求流**：
+
+  ```text
+  ADMIN / REVIEWER 查询审核列表或详情
+    → 按 status / sourceType / resultType / ruleCode 筛选
+    → REVIEWER 读取 PENDING(version=0)
+    → PATCH decision 携带 CONFIRMED/IGNORED + expected version + optional note
+    → UPDATE ... WHERE id=? AND status='PENDING' AND version=?
+    → 更新 1 行：version+1，保存 reviewer/time/note，返回最新任务
+    → 更新 0 行：分类为不存在、非法终态或版本冲突
+  ```
+- **范围边界**：
+  - 本日只实现 `GET /api/review-tasks`、`GET /api/review-tasks/{id}`、`PATCH /api/review-tasks/{id}/decision`，以及查询投影、条件更新、统一错误和权限矩阵。
+  - 审核只改变 `review_tasks`；不修改 `transactions`、`reconciliation_results` 或 `risk_hits`，不重跑对账/规则，不产生新 RabbitMQ 消息。
+  - 不修改已应用的 V1～V9，不预先新增 V10；现有索引先用真实 `EXPLAIN` 验证，禁止根据单个小样本追加猜测型索引。
+  - 不使用 `synchronized`、本地锁、Redis 分布式锁或悲观长事务，不实现撤销、重开、转派、认领、批量审核、多级审批或通用工作流。
+  - Day 4 不写审计日志；只保留清晰的事务接入点，Day 5 再保证审核终态与 `REVIEW_CONFIRMED/REVIEW_IGNORED` 审计同事务提交。
+  - 不实现 Redis、统计、限流、前端或 Week 6 监控/部署能力。
+- **关键设计决定**：
+  - 列表复用现有 `PageResponse`，page 默认 1、size 默认 20 且最大 100；固定按 `created_at DESC, id DESC` 排序，避免并列时间导致翻页抖动。
+  - `resultType` 只适用于异常来源，`ruleCode` 只适用于风险来源；二者互斥。来源省略时可以从专属条件推导，矛盾组合返回 `400 INVALID_REQUEST`，不静默返回空页。
+  - 详情/列表通过只读 JOIN 投影解释两种来源；风险任务经 `risk_hit` 关联展示 CSV 交易和对账结果，但不把派生关系伪装成 `review_tasks` 的第二个来源外键。
+  - 决策使用独立 `ReviewDecision(CONFIRMED/IGNORED)`，不允许客户端提交 `PENDING`；reviewerId 只从已验签 JWT subject 获取，不能由请求体指定。
+  - note trim 后空白保存为 `null`，最多 255 个 Unicode 字符；`reviewedAt/updatedAt` 使用现有 `businessClock`，保证测试确定性。
+  - 真正的乐观锁是单条条件更新：同时匹配 id、`PENDING` 和 expected version，并检查受影响行数；不能使用 `selectById → 修改 Entity → 无条件 updateById`。
+  - 请求开始时已是终态返回 `409 INVALID_REVIEW_OPERATION`；请求版本已过期或合法预检查后输掉并发竞争返回 `409 REVIEW_VERSION_CONFLICT`；不存在返回 `404 REVIEW_TASK_NOT_FOUND`。
+- **执行顺序**：
+  1. 先按 Day 1 契约和 V9 真实结构锁定 DTO、筛选组合、响应字段、状态机、错误码与并发失败语义，并把失败测试写在实现之前。
+  2. 扩展 `ReviewTaskMapper`，实现详情/分页 JOIN 投影和条件更新；用真实 MySQL 覆盖两种来源、稳定排序、过滤组合和 0/1 更新行数。
+  3. 实现 `ReviewTaskService` 的只读查询、note 规范化、状态/版本预检查、原子条件更新和更新后回查。
+  4. 实现 Controller 三个路由，复用现有分页与统一错误响应；增加三类审核异常和 `ErrorCode`/全局映射。
+  5. 显式更新 `SecurityConfiguration`：GET 允许 ADMIN/REVIEWER，PATCH decision 仅允许 REVIEWER，并覆盖所有身份组合的零副作用测试。
+  6. 使用两个真实事务和同步屏障并发提交同一 version=0 任务，证明恰好一个成功、一个稳定 409，成功方字段不会被覆盖。
+  7. 运行聚焦测试、数据库基线和完整回归；启动真实应用，使用 ADMIN/REVIEWER JWT 完成 HTTP/MySQL 验收。
+  8. 清理验收数据、消息、临时凭据和端口，执行敏感信息检查、范围审计、`git diff --check`，回填实际证据后再提交。
 - **任务**：
-  - [ ] 实现审核任务详情、分页筛选和决策接口，决策请求携带期望 `version`。
-  - [ ] 使用数据库条件更新完成 `PENDING → CONFIRMED / IGNORED`，同时递增版本；更新数为 0 时区分不存在、已处理和版本冲突。
-  - [ ] 两个并发请求读取同一版本后只能有一个成功，失败方返回稳定 `409`，不得覆盖先完成的决策人、结论或时间。
-  - [ ] REVIEWER 可执行审核；ADMIN/REVIEWER 查询、匿名 `401`、无权角色 `403` 和不存在资源 `404` 按 Day 1 契约落地。
-  - [ ] 覆盖状态迁移、重复提交、过期版本、并发竞争、事务回滚和拒绝请求无副作用测试。
+  - [x] 新增 `docs/design/week5-day4-review-workflow-and-optimistic-lock-design.md`，完成本日业务目标、接口、查询、条件更新、冲突分类、权限、测试、回滚与 Day 5 交接安排；不把计划描述成已实现功能。
+  - [x] 新增 `ReviewTaskQueryRequest`，实现 page/size 默认与边界、status/sourceType/resultType/ruleCode 类型安全筛选和来源专属条件组合校验。
+  - [x] 新增独立 `ReviewDecision` 与 `ReviewDecisionRequest`；只接受 CONFIRMED/IGNORED、非负 expected version 和 trim 后最多 255 字符的可选 note。
+  - [x] 新增只读查询投影与 `ReviewTaskResponse`，为异常来源和风险来源返回稳定、可解释且不含敏感原文的统一响应。
+  - [x] 扩展 `ReviewTaskMapper`，实现详情查询、稳定分页 JOIN 查询和按 id+PENDING+version 的条件更新；禁止无条件实体覆盖。
+  - [x] 实现 `ReviewTaskService`/实现类，完成查询、详情、决策人提取后的业务校验、note 规范化、固定时钟、条件更新、回查与 0 行冲突分类。
+  - [x] 新增 `ReviewTaskNotFoundException`、`InvalidReviewOperationException`、`ReviewVersionConflictException`，扩展统一错误码与 `404/409` 全局异常响应。
+  - [x] 实现三个审核 HTTP 接口；成功决策返回 `200` 和最新任务，不使用 204，不允许请求体覆盖 reviewerId、reviewedAt 或 version 结果。
+  - [x] 更新 Spring Security：查询允许 ADMIN/REVIEWER，决策只允许 REVIEWER；匿名/无效 Token 为 401，ADMIN 决策和无角色访问为 403。
+  - [x] 新增 DTO/Service/Controller 测试，覆盖默认分页、非法参数、两种来源响应、确认/忽略、note 边界、不存在、终态、过期版本和拒绝路径零副作用。
+  - [x] 新增真实 MySQL Mapper/事务集成测试，覆盖筛选、稳定分页、V9 CHECK、条件更新 0/1 行、终态不可变和失败回滚。
+  - [x] 新增真实并发测试：两个事务读取同一 version=0 后同时提交，断言一个成功、一个 `REVIEW_VERSION_CONFLICT`，最终只有成功方的状态、审核人、时间和说明。
+  - [x] 扩展 RBAC 集成测试，使用真实签名 JWT 覆盖 ADMIN/REVIEWER/匿名/无角色在三个路由上的完整权限矩阵及数据库副作用。
+  - [x] 使用真实 `EXPLAIN` 验证 V9 分页索引；运行聚焦测试、数据库基线、完整 `mvn clean test` 和真实 JWT/HTTP/MySQL 闭环，记录本日实际数字。
+  - [x] 清理验收数据、RabbitMQ 消息、临时凭据和监听端口；执行敏感信息检查、Day 5/6 范围审计和 `git diff --check` 后提交。
 - **关键文件**：
   - `docs/design/week5-day4-review-workflow-and-optimistic-lock-design.md`
-  - `src/main/java/com/finguard/core/review/controller/`
-  - `src/main/java/com/finguard/core/review/service/`
-  - `src/main/java/com/finguard/core/review/mapper/`
+  - `src/main/java/com/finguard/core/review/controller/ReviewTaskController.java`
+  - `src/main/java/com/finguard/core/review/dto/ReviewTaskQueryRequest.java`
+  - `src/main/java/com/finguard/core/review/dto/ReviewDecisionRequest.java`
+  - `src/main/java/com/finguard/core/review/model/ReviewDecision.java`
+  - `src/main/java/com/finguard/core/review/model/ReviewTaskView.java`
+  - `src/main/java/com/finguard/core/review/service/ReviewTaskService.java`
+  - `src/main/java/com/finguard/core/review/service/impl/ReviewTaskServiceImpl.java`
+  - `src/main/java/com/finguard/core/review/vo/ReviewTaskResponse.java`
+  - `src/main/java/com/finguard/core/review/exception/`
+  - `src/main/java/com/finguard/core/review/mapper/ReviewTaskMapper.java`
+  - `src/main/java/com/finguard/core/common/exception/ErrorCode.java`
+  - `src/main/java/com/finguard/core/common/exception/GlobalExceptionHandler.java`
   - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
   - `src/test/java/com/finguard/core/review/`
-- **验收**：真实 MySQL 并发实验中只有一个审核请求成功；终态不可重复修改；HTTP 状态与数据库副作用一致；聚焦、完整回归和 `git diff --check` 通过。
-- **提交建议**：`feat: add optimistic exception review workflow`
+  - `src/test/java/com/finguard/core/auth/security/RbacAuthorizationIntegrationTest.java`
+- **验收标准**：
+  - 三个接口符合 Day 1 契约；两种审核来源能正确解释，分页按 `created_at DESC, id DESC` 稳定且 JOIN 不放大 count。
+  - 条件更新同时包含 id、PENDING 和 expected version，成功只能影响 1 行；终态为 version=1，reviewer/time 非空且不能再变更。
+  - 真实 MySQL 并发实验恰好一个 200、一个 `409 REVIEW_VERSION_CONFLICT`，最终数据库只保留成功方决策。
+  - 不存在、终态、过期版本分别为稳定 404/409；400/401/403/404/409 全部与数据库零副作用证据一致。
+  - ADMIN/REVIEWER 查询、仅 REVIEWER 决策、匿名 401、ADMIN 决策/无角色 403 的权限矩阵完整通过。
+  - 聚焦、数据库基线、完整回归和真实 JWT/HTTP/MySQL 验收均为本日实跑；数据、消息、凭据和端口清理完成，`git diff --check` 通过。
+  - 变更中没有迁移修改、V10 审计、Redis、限流、新 MQ、撤销/重开、批量审核或通用工作流实现。
+- **验收结论**：
+  - Day 4 审核/RBAC/数据库聚焦测试 32/32，完整 `mvn clean test` 326/326，均为 0 failures、0 errors、0 skipped，`BUILD SUCCESS`。
+  - 真实 MySQL 两事务并发和真实双 HTTP 并发均证明同一 version=0 只有一个成功；HTTP 得到一个 200、一个 `409 REVIEW_VERSION_CONFLICT`，最终 version=1 且成功方的状态、审核人、时间和说明没有被覆盖。
+  - 真实应用在 18080 返回 `UP`；真实 ADMIN/REVIEWER 登录签发 JWT 后，列表/详情为 200、匿名为 401、ADMIN 决策为 403、过期版本为 409、REVIEWER 决策为 200、终态重复提交为 409。
+  - 真实 SQL 确认 `CONFIRMED|1|reviewer|note|reviewed_at` 状态形状；`EXPLAIN` 对 status 分页使用 `idx_review_tasks_status_created_id`，source+status 小样本也由优化器选择该覆盖索引，本日不新增猜测型迁移。
+  - 注入决策后回查失败时，事务把任务完整恢复为 `PENDING|0|NULL|NULL|NULL`；400/401/403/404/409 拒绝路径均有零副作用证据。
+  - 验收用户、账户、导入/对账/审核数据和临时凭据已清理，8 个 RabbitMQ 业务队列 ready/unacked 全为 0，18080 已释放；MySQL 8.4.10 与 RabbitMQ 4.3.4 均为 healthy。
+- **学习重点**：
+  - 必须掌握：乐观锁三件套（期望版本、条件更新、受影响行数）、原子状态迁移、短事务、稳定分页、JOIN 投影、统一异常和 401/403/404/409 分工。
+  - 边做边学：两个真实事务的并发测试、失败后的冲突分类、JWT subject 作为审核人、固定 `Clock`、数据库 CHECK 与 Service 校验的双层保护。
+  - 留到 Day 5：不可变审计表、审核决策与审计同事务、审计失败回滚和 ADMIN 审计查询。
+  - 本日不学不做：Redis 锁、悲观长事务、工作流引擎、撤销/重开、多级审批、前端状态管理和监控部署。
+- **常见错误预防**：不要把 version 只返回给客户端却不放进 UPDATE WHERE；不要使用 `updateById` 覆盖并发结果；不要用 Java/Redis 锁代替数据库条件更新；不要允许 ADMIN 自动拥有 REVIEWER 专属决策权；不要信任请求体里的审核人/时间；不要让 JOIN 导致分页总数重复；不要把重复终态提交伪装成成功；不要修改 V9 或提前写 Day 5 审计。
+- **回滚**：Day 4 不新增迁移；代码、测试、权限规则和设计文档可按本日文件范围回退。回滚后 V9 中已有 `PENDING` 任务继续保留，不删除审核、风险、对账、交易或消息数据来掩盖失败。
+- **提交**：`feat: add optimistic exception review workflow`
 
 ### Week 5 Day 5：关键业务操作审计日志
 
@@ -1550,4 +1629,5 @@
 | Week 4 Day 7 综合验收 | `c7a1156` |
 | Week 5 Day 1 风险、审核、Redis 与审计契约设计 | `71b432d` |
 | Week 5 Day 2 风险命中持久层与规则契约骨架 | `0cbb71a` |
-| Week 5 Day 3 三条风险规则与审核任务生成 | 本次提交 |
+| Week 5 Day 3 三条风险规则与审核任务生成 | `5128247` |
+| Week 5 Day 4 审核接口与乐观锁并发控制 | 本次提交 |

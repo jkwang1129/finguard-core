@@ -52,7 +52,9 @@ public class SecurityConfiguration {
                                 "/api/import-jobs/*",
                                 "/api/import-jobs/*/errors",
                                 "/api/reconciliation-jobs/*",
-                                "/api/reconciliation-jobs/*/results"
+                                "/api/reconciliation-jobs/*/results",
+                                "/api/review-tasks",
+                                "/api/review-tasks/*"
                         ).hasAnyRole(
                                 RoleCode.ADMIN.name(),
                                 RoleCode.REVIEWER.name()
@@ -64,6 +66,10 @@ public class SecurityConfiguration {
                                 "/api/import-jobs",
                                 "/api/reconciliation-jobs"
                         ).hasRole(RoleCode.ADMIN.name())
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/review-tasks/*/decision"
+                        ).hasRole(RoleCode.REVIEWER.name())
                         .requestMatchers(
                                 HttpMethod.PATCH,
                                 "/api/accounts/*/name",

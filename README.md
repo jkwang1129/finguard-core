@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 5 Day 3 已完成：对账消费事务已接入大额、疑似重复和高频交易三条可解释规则，幂等保存风险命中，并为对账异常与风险命中生成 `PENDING(version=0)` 审核任务。完整 `mvn clean test` 为 314/314，真实 MySQL/RabbitMQ/JWT/HTTP 闭环已验证并清理。
+当前进度为 Week 5 Day 4 已完成：ADMIN/REVIEWER 可分页查询审核任务，REVIEWER 可携带期望版本确认或忽略；数据库条件更新保证并发请求只有一个成功，并稳定区分不存在、终态和版本冲突。完整 `mvn clean test` 为 326/326，真实 MySQL/RabbitMQ/JWT/HTTP 与双请求并发闭环已验证并清理。
 
 ## 当前技术基线
 
@@ -59,7 +59,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 历史 CSV 候选按账户/时间范围每 500 个账户分批查询，再按 `(transaction_time, id)` 在内存中稳定计算，不使用逐交易 SQL；
 - V9 `review_tasks` 以真实外键区分对账异常与风险命中来源，由 CHECK、唯一键和 RESTRICT 外键保护来源、状态、幂等和证据关系；
 - 对账 results、risk hits、review tasks 和 job `COMPLETED` 同事务提交，规则/风险/审核写入失败整体回滚，重复 MQ 和 ACK 丢失红投无重复副作用；
-- 314 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险/审核任务生成和应用健康验收。
+- 审核任务详情与稳定分页，支持状态、来源、对账异常类型和风险规则筛选；ADMIN/REVIEWER 可查，只有 REVIEWER 可决策；
+- `PENDING → CONFIRMED/IGNORED` 使用 `id + PENDING + version` 原子条件更新，保存 JWT 审核人、审核时间和可选说明；并发失败、终态重复提交和不存在分别返回稳定 `409/409/404`；
+- 326 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、乐观锁并发和应用健康验收。
 
 ## 本地运行
 
@@ -189,6 +191,18 @@ GET    /api/reconciliation-jobs/{reconciliationJobId}/results?page=1&size=20&res
 
 第一版只比较同账户、未删除的 `CSV_IMPORT` 与 `MANUAL` 交易：优先使用大小写敏感的外部流水号，再使用方向、精确金额和前后 3 天时间窗口。系统不修改原交易，逐笔保存匹配方式和稳定原因码。
 
+### 异常审核
+
+```text
+GET    /api/review-tasks?page=1&size=20&status=PENDING&sourceType=RISK_HIT&ruleCode=LARGE_AMOUNT
+GET    /api/review-tasks/{reviewTaskId}
+PATCH  /api/review-tasks/{reviewTaskId}/decision
+```
+
+列表和详情允许 `ADMIN`、`REVIEWER` 查询；决策只允许 `REVIEWER`。决策请求示例为 `{"decision":"CONFIRMED","version":0,"note":"verified"}`，成功返回更新后的任务。列表还支持 `resultType=UNMATCHED/DUPLICATE/SUSPICIOUS`；`resultType` 与 `ruleCode` 是来源专属且互斥的筛选条件。
+
+审核只修改 `review_tasks`，不会改写原交易、对账结果或风险命中。两个请求携带同一版本并发决策时只有一个能完成条件更新，失败方返回 `409 REVIEW_VERSION_CONFLICT`；已经进入终态的任务返回 `409 INVALID_REVIEW_OPERATION`。
+
 错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
 
 ```json
@@ -204,7 +218,7 @@ GET    /api/reconciliation-jobs/{reconciliationJobId}/results?page=1&size=20&res
 
 ## 当前限制
 
-- 已生成异常/风险审核任务，但尚未实现审核分页/详情接口、`CONFIRMED/IGNORED` 决策、乐观锁和审计日志；
+- 审核分页、详情、决策和乐观锁已完成，但尚未实现审核撤销/重开、批量审核或审计日志；
 - 导入和对账消费者采用单事务任务行锁，正常处理中间态不会独立提交，也不提供跨事务可见的处理租约；
 - DLQ 目前依赖运维排查，尚未提供失败任务的人工重跑、覆盖导入或管理接口；
 - 风险候选查询在 4,000 条合成数据上由 MySQL 优化器选择全表扫描；当时估算命中 15.89% 且数据量小，Day 3 未根据单次合成样本追加索引，留待 Week 6 用更真实数据规模压测后决定；

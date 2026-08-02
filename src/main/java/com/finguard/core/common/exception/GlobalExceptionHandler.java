@@ -10,6 +10,10 @@ import com.finguard.core.importjob.exception.InvalidImportFileRequestException;
 import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
 import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
 import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
+import com.finguard.core.review.exception.InvalidReviewOperationException;
+import com.finguard.core.review.exception.InvalidReviewRequestException;
+import com.finguard.core.review.exception.ReviewTaskNotFoundException;
+import com.finguard.core.review.exception.ReviewVersionConflictException;
 import com.finguard.core.transaction.exception.DuplicateTransactionException;
 import com.finguard.core.transaction.exception.InvalidTransactionInputException;
 import com.finguard.core.transaction.exception.InvalidTransactionOperationException;
@@ -115,6 +119,59 @@ public class GlobalExceptionHandler {
         return error(
                 HttpStatus.CONFLICT,
                 ErrorCode.INVALID_RECONCILIATION_OPERATION,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(ReviewTaskNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleReviewTaskNotFound(
+            ReviewTaskNotFoundException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                ErrorCode.REVIEW_TASK_NOT_FOUND,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(InvalidReviewOperationException.class)
+    public ResponseEntity<ApiErrorResponse>
+    handleInvalidReviewOperation(
+            InvalidReviewOperationException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.CONFLICT,
+                ErrorCode.INVALID_REVIEW_OPERATION,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(ReviewVersionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleReviewVersionConflict(
+            ReviewVersionConflictException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.CONFLICT,
+                ErrorCode.REVIEW_VERSION_CONFLICT,
+                exception.getMessage(),
+                request,
+                List.of()
+        );
+    }
+
+    @ExceptionHandler(InvalidReviewRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidReviewRequest(
+            InvalidReviewRequestException exception,
+            HttpServletRequest request) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                ErrorCode.INVALID_REQUEST,
                 exception.getMessage(),
                 request,
                 List.of()
