@@ -68,6 +68,23 @@ public interface ReconciliationResultMapper
     );
 
     @Select("""
+            SELECT id,
+                   reconciliation_job_id AS reconciliationJobId,
+                   csv_transaction_id AS csvTransactionId,
+                   manual_transaction_id AS manualTransactionId,
+                   result_type AS resultType,
+                   match_method AS matchMethod,
+                   reason_code AS reasonCode,
+                   created_at AS createdAt
+            FROM reconciliation_results
+            WHERE reconciliation_job_id = #{reconciliationJobId}
+            ORDER BY csv_transaction_id ASC, id ASC
+            """)
+    List<ReconciliationResult> selectByJobId(
+            @Param("reconciliationJobId") Long reconciliationJobId
+    );
+
+    @Select("""
             SELECT COUNT(*)
             FROM reconciliation_results
             WHERE reconciliation_job_id = #{reconciliationJobId}

@@ -12,6 +12,9 @@ import com.finguard.core.reconciliation.service.ReconciliationJobService;
 import com.finguard.core.reconciliation.service.impl.ReconciliationJobTransactionService;
 import com.finguard.core.reconciliation.support.ReconciliationTestFixture;
 import com.finguard.core.reconciliation.vo.ReconciliationJobResponse;
+import com.finguard.core.review.mapper.ReviewTaskMapper;
+import com.finguard.core.risk.mapper.RiskHitMapper;
+import com.finguard.core.risk.rule.LargeAmountRule;
 import com.finguard.core.transaction.model.TransactionDirection;
 import com.finguard.core.transaction.model.TransactionSource;
 import com.rabbitmq.client.Channel;
@@ -58,6 +61,12 @@ class AsyncReconciliationProcessorIntegrationTest {
     private JdbcTemplate jdbcTemplate;
     @MockitoSpyBean
     private ReconciliationResultMapper reconciliationResultMapper;
+    @MockitoSpyBean
+    private ReviewTaskMapper reviewTaskMapper;
+    @MockitoSpyBean
+    private RiskHitMapper riskHitMapper;
+    @MockitoSpyBean
+    private LargeAmountRule largeAmountRule;
 
     private ReconciliationTestFixture fixture;
 
@@ -70,6 +79,9 @@ class AsyncReconciliationProcessorIntegrationTest {
     @AfterEach
     void tearDown() {
         reset(reconciliationResultMapper);
+        reset(reviewTaskMapper);
+        reset(riskHitMapper);
+        reset(largeAmountRule);
         fixture.clean();
     }
 
@@ -89,12 +101,124 @@ class AsyncReconciliationProcessorIntegrationTest {
         assertThat(completed.duplicateCount()).isZero();
         assertThat(completed.suspiciousCount()).isZero();
         assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertThat(riskCount(accepted.id())).isZero();
+        assertThat(reviewCount(accepted.id())).isZero();
 
         assertThat(transactionService.processPending(accepted.id()))
                 .isEqualTo(
                         ReconciliationProcessingResult.ALREADY_COMPLETED
                 );
         assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertThat(riskCount(accepted.id())).isZero();
+        assertThat(reviewCount(accepted.id())).isZero();
+    }
+
+    @Test
+    void shouldPersistRulesAndReviewTasksIdempotently() {
+        ReconciliationJobResponse accepted = createRiskJob();
+
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.PROCESSED);
+        ReconciliationJobResponse completed =
+                reconciliationJobService.getById(accepted.id());
+        assertThat(completed.status())
+                .isEqualTo(ReconciliationJobStatus.COMPLETED);
+        assertThat(completed.totalCount()).isEqualTo(5);
+        assertThat(completed.unmatchedCount()).isEqualTo(5);
+        assertThat(resultCount(accepted.id())).isEqualTo(5);
+        assertThat(riskCount(accepted.id())).isEqualTo(10);
+        assertThat(reviewCount(accepted.id())).isEqualTo(15);
+        assertThat(pendingReviewCount(accepted.id())).isEqualTo(15);
+
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.ALREADY_COMPLETED);
+        assertThat(resultCount(accepted.id())).isEqualTo(5);
+        assertThat(riskCount(accepted.id())).isEqualTo(10);
+        assertThat(reviewCount(accepted.id())).isEqualTo(15);
+    }
+
+    @Test
+    void shouldRollbackResultsHitsAndTasksWhenTaskInsertFails() {
+        ReconciliationJobResponse accepted = createRiskJob();
+        doThrow(new DataAccessResourceFailureException("injected review failure"))
+                .when(reviewTaskMapper).insertBatch(any());
+
+        assertThatThrownBy(() ->
+                transactionService.processPending(accepted.id()))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(reconciliationJobService.getById(accepted.id()).status())
+                .isEqualTo(ReconciliationJobStatus.PENDING);
+        assertThat(resultCount(accepted.id())).isZero();
+        assertThat(riskCount(accepted.id())).isZero();
+        assertThat(reviewCount(accepted.id())).isZero();
+
+        reset(reviewTaskMapper);
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.PROCESSED);
+        assertThat(resultCount(accepted.id())).isEqualTo(5);
+        assertThat(riskCount(accepted.id())).isEqualTo(10);
+        assertThat(reviewCount(accepted.id())).isEqualTo(15);
+    }
+
+    @Test
+    void shouldRollbackAndRecoverWhenRuleEvaluationFails() {
+        ReconciliationJobResponse accepted = createRiskJob();
+        doThrow(new IllegalStateException("injected rule failure"))
+                .when(largeAmountRule).evaluate(any());
+
+        assertThatThrownBy(() ->
+                transactionService.processPending(accepted.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("injected rule failure");
+        assertNoRiskPipelineEffects(accepted.id());
+
+        reset(largeAmountRule);
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.PROCESSED);
+        assertRiskPipelineCompleted(accepted.id());
+    }
+
+    @Test
+    void shouldRollbackAndRecoverWhenRiskInsertFails() {
+        ReconciliationJobResponse accepted = createRiskJob();
+        doThrow(new DataAccessResourceFailureException("injected risk failure"))
+                .when(riskHitMapper).insertBatch(any());
+
+        assertThatThrownBy(() ->
+                transactionService.processPending(accepted.id()))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertNoRiskPipelineEffects(accepted.id());
+
+        reset(riskHitMapper);
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.PROCESSED);
+        assertRiskPipelineCompleted(accepted.id());
+    }
+
+    @Test
+    void shouldCountHistoricalCsvExpensesAcrossImportJobs() {
+        ReconciliationJobResponse accepted = createCrossImportFrequencyJob();
+
+        assertThat(transactionService.processPending(accepted.id()))
+                .isEqualTo(ReconciliationProcessingResult.PROCESSED);
+        assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertThat(riskCount(accepted.id())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM risk_hits rh
+                INNER JOIN reconciliation_results rr
+                    ON rr.id = rh.reconciliation_result_id
+                WHERE rr.reconciliation_job_id = ?
+                  AND rh.rule_code = 'FREQUENT_TRANSACTION'
+                  AND rh.observed_count = 5
+                  AND rh.threshold_count = 5
+                  AND rh.window_seconds = 600
+                """,
+                Integer.class,
+                accepted.id()
+        )).isEqualTo(1);
+        assertThat(reviewCount(accepted.id())).isEqualTo(2);
     }
 
     @Test
@@ -121,7 +245,7 @@ class AsyncReconciliationProcessorIntegrationTest {
     @Test
     void shouldSerializeConcurrentMessagesByJobRowLock()
             throws Exception {
-        ReconciliationJobResponse accepted = createAcceptedJob();
+        ReconciliationJobResponse accepted = createRiskJob();
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -156,7 +280,7 @@ class AsyncReconciliationProcessorIntegrationTest {
             executor.shutdownNow();
         }
 
-        assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertRiskPipelineCompleted(accepted.id());
         assertThat(reconciliationJobService.getById(accepted.id()).status())
                 .isEqualTo(ReconciliationJobStatus.COMPLETED);
     }
@@ -186,7 +310,7 @@ class AsyncReconciliationProcessorIntegrationTest {
 
     @Test
     void shouldShortCircuitRedeliveryAfterAckLoss() throws Exception {
-        ReconciliationJobResponse accepted = createAcceptedJob();
+        ReconciliationJobResponse accepted = createRiskJob();
         ReconciliationJobMessageListener listener =
                 new ReconciliationJobMessageListener(
                         new ReconciliationJobMessageHandler(
@@ -219,13 +343,13 @@ class AsyncReconciliationProcessorIntegrationTest {
                 .hasMessage("injected ACK failure");
         assertThat(reconciliationJobService.getById(accepted.id()).status())
                 .isEqualTo(ReconciliationJobStatus.COMPLETED);
-        assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertRiskPipelineCompleted(accepted.id());
 
         Channel recoveredChannel = mock(Channel.class);
         listener.onMessage(message, amqpMessage, recoveredChannel, 82L);
 
         verify(recoveredChannel).basicAck(82L, false);
-        assertThat(resultCount(accepted.id())).isEqualTo(1);
+        assertRiskPipelineCompleted(accepted.id());
     }
 
     private ReconciliationJobResponse createAcceptedJob() {
@@ -258,10 +382,142 @@ class AsyncReconciliationProcessorIntegrationTest {
         return reconciliationJobService.create(importJobId, ownerId);
     }
 
+    private ReconciliationJobResponse createRiskJob() {
+        Long ownerId = fixture.insertUser();
+        Long accountId = fixture.insertAccount();
+        Long importJobId = fixture.insertImportJob(
+                ownerId,
+                ImportJobStatus.SUCCESS,
+                5
+        );
+        for (int index = 0; index < 5; index++) {
+            fixture.insertTransaction(
+                    accountId,
+                    importJobId,
+                    "RISK-" + importJobId + "-" + index,
+                    TransactionDirection.EXPENSE,
+                    "15000.00",
+                    BASE_TIME.minusMinutes(4L - index),
+                    TransactionSource.CSV_IMPORT
+            );
+        }
+        return reconciliationJobService.create(importJobId, ownerId);
+    }
+
+    private ReconciliationJobResponse createCrossImportFrequencyJob() {
+        Long ownerId = fixture.insertUser();
+        Long accountId = fixture.insertAccount();
+        Long historicalImportJobId = fixture.insertImportJob(
+                ownerId,
+                ImportJobStatus.SUCCESS,
+                4
+        );
+        for (int index = 0; index < 4; index++) {
+            fixture.insertTransaction(
+                    accountId,
+                    historicalImportJobId,
+                    "HISTORY-" + historicalImportJobId + "-" + index,
+                    TransactionDirection.EXPENSE,
+                    Integer.toString(index + 1),
+                    BASE_TIME.minusMinutes(8L - index),
+                    TransactionSource.CSV_IMPORT
+            );
+        }
+        Long currentImportJobId = fixture.insertImportJob(
+                ownerId,
+                ImportJobStatus.SUCCESS,
+                1
+        );
+        fixture.insertTransaction(
+                accountId,
+                currentImportJobId,
+                "CURRENT-" + currentImportJobId,
+                TransactionDirection.EXPENSE,
+                "5.00",
+                BASE_TIME,
+                TransactionSource.CSV_IMPORT
+        );
+        return reconciliationJobService.create(currentImportJobId, ownerId);
+    }
+
+    private void assertNoRiskPipelineEffects(Long reconciliationJobId) {
+        assertThat(reconciliationJobService.getById(reconciliationJobId)
+                .status()).isEqualTo(ReconciliationJobStatus.PENDING);
+        assertThat(resultCount(reconciliationJobId)).isZero();
+        assertThat(riskCount(reconciliationJobId)).isZero();
+        assertThat(reviewCount(reconciliationJobId)).isZero();
+    }
+
+    private void assertRiskPipelineCompleted(Long reconciliationJobId) {
+        assertThat(reconciliationJobService.getById(reconciliationJobId)
+                .status()).isEqualTo(ReconciliationJobStatus.COMPLETED);
+        assertThat(resultCount(reconciliationJobId)).isEqualTo(5);
+        assertThat(riskCount(reconciliationJobId)).isEqualTo(10);
+        assertThat(reviewCount(reconciliationJobId)).isEqualTo(15);
+    }
+
     private int resultCount(Long reconciliationJobId) {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM reconciliation_results "
                         + "WHERE reconciliation_job_id = ?",
+                Integer.class,
+                reconciliationJobId
+        );
+    }
+
+    private int riskCount(Long reconciliationJobId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM risk_hits rh
+                INNER JOIN reconciliation_results rr
+                    ON rr.id = rh.reconciliation_result_id
+                WHERE rr.reconciliation_job_id = ?
+                """,
+                Integer.class,
+                reconciliationJobId
+        );
+    }
+
+    private int reviewCount(Long reconciliationJobId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM review_tasks rt
+                LEFT JOIN reconciliation_results rr
+                    ON rr.id = rt.reconciliation_result_id
+                LEFT JOIN risk_hits rh ON rh.id = rt.risk_hit_id
+                LEFT JOIN reconciliation_results hit_rr
+                    ON hit_rr.id = rh.reconciliation_result_id
+                WHERE COALESCE(
+                    rr.reconciliation_job_id,
+                    hit_rr.reconciliation_job_id
+                ) = ?
+                """,
+                Integer.class,
+                reconciliationJobId
+        );
+    }
+
+    private int pendingReviewCount(Long reconciliationJobId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM review_tasks rt
+                LEFT JOIN reconciliation_results rr
+                    ON rr.id = rt.reconciliation_result_id
+                LEFT JOIN risk_hits rh ON rh.id = rt.risk_hit_id
+                LEFT JOIN reconciliation_results hit_rr
+                    ON hit_rr.id = rh.reconciliation_result_id
+                WHERE COALESCE(
+                    rr.reconciliation_job_id,
+                    hit_rr.reconciliation_job_id
+                ) = ?
+                  AND rt.status = 'PENDING'
+                  AND rt.version = 0
+                  AND rt.reviewed_by IS NULL
+                  AND rt.reviewed_at IS NULL
+                """,
                 Integer.class,
                 reconciliationJobId
         );

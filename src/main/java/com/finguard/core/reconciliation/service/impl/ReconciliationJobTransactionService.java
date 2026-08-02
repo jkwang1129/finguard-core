@@ -20,6 +20,9 @@ import com.finguard.core.reconciliation.model.ReconciliationProcessingResult;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.reconciliation.model.ReconciliationTransaction;
 import com.finguard.core.reconciliation.service.ReconciliationMatcher;
+import com.finguard.core.review.service.ReviewTaskGenerator;
+import com.finguard.core.risk.entity.RiskHit;
+import com.finguard.core.risk.service.RiskEvaluationService;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.mapper.TransactionMapper;
 import com.finguard.core.transaction.model.TransactionBusinessKey;
@@ -53,6 +56,8 @@ public class ReconciliationJobTransactionService {
     private final ImportJobMapper importJobMapper;
     private final TransactionMapper transactionMapper;
     private final ReconciliationMatcher matcher;
+    private final RiskEvaluationService riskEvaluationService;
+    private final ReviewTaskGenerator reviewTaskGenerator;
     private final Clock businessClock;
 
     public ReconciliationJobTransactionService(
@@ -62,6 +67,8 @@ public class ReconciliationJobTransactionService {
             ImportJobMapper importJobMapper,
             TransactionMapper transactionMapper,
             ReconciliationMatcher matcher,
+            RiskEvaluationService riskEvaluationService,
+            ReviewTaskGenerator reviewTaskGenerator,
             Clock businessClock) {
         this.reconciliationJobMapper = reconciliationJobMapper;
         this.outboxEventMapper = outboxEventMapper;
@@ -69,6 +76,8 @@ public class ReconciliationJobTransactionService {
         this.importJobMapper = importJobMapper;
         this.transactionMapper = transactionMapper;
         this.matcher = matcher;
+        this.riskEvaluationService = riskEvaluationService;
+        this.reviewTaskGenerator = reviewTaskGenerator;
         this.businessClock = businessClock;
     }
 
@@ -189,11 +198,32 @@ public class ReconciliationJobTransactionService {
             );
         }
         List<Transaction> manual = loadManualCandidates(imported);
+        List<ReconciliationTransaction> importedModels = imported.stream()
+                .map(this::toModel)
+                .toList();
         List<ReconciliationDecision> decisions = matcher.match(
-                imported.stream().map(this::toModel).toList(),
+                importedModels,
                 manual.stream().map(this::toModel).toList()
         );
         persistResults(reconciliationJobId, decisions);
+        List<ReconciliationResult> persistedResults =
+                reconciliationResultMapper.selectByJobId(
+                        reconciliationJobId
+                );
+        if (persistedResults.size() != decisions.size()) {
+            throw new IllegalStateException(
+                    "Persisted reconciliation result count was inconsistent"
+            );
+        }
+        List<RiskHit> riskHits = riskEvaluationService.evaluateAndPersist(
+                reconciliationJobId,
+                persistedResults,
+                importedModels
+        );
+        reviewTaskGenerator.generateAndPersist(
+                persistedResults,
+                riskHits
+        );
         complete(reconciliationJobId, decisions);
     }
 

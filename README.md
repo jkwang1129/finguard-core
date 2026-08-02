@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 4 Day 7 已完成：导入和对账请求均由 Outbox 可靠发布并由真实 RabbitMQ 消费者异步处理。Day 7 已完成干净 Compose 重建、JWT/HTTP 正常链路、Broker/消费者故障演练、重试与 DLQ 验收、数据消息清理和周复盘；完整 `mvn clean test` 为 287/287。
+当前进度为 Week 5 Day 3 已完成：对账消费事务已接入大额、疑似重复和高频交易三条可解释规则，幂等保存风险命中，并为对账异常与风险命中生成 `PENDING(version=0)` 审核任务。完整 `mvn clean test` 为 314/314，真实 MySQL/RabbitMQ/JWT/HTTP 闭环已验证并清理。
 
 ## 当前技术基线
 
@@ -54,7 +54,12 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 异步对账受理、真实消息消费、任务详情和结果类型筛选；`ADMIN` 可触发，`ADMIN`、`REVIEWER` 可查询；
 - 500 条分批候选查询与结果写入、任务行锁、并发消息幂等、结果/统计原子提交、事务回滚恢复和 ACK 丢失红投短路；
 - RabbitMQ durable 基础拓扑、持久化 JSON 消息、稳定消息 ID、correlated confirm、mandatory return、Outbox 发布退避和定时 Relay；
-- 287 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ 和应用健康验收。
+- 类型安全的风险规则配置与启动校验：大额阈值、5 分钟疑似重复窗口和 10 分钟高频支出窗口；
+- 三条策略规则以固定原因码、观测值、阈值/窗口快照和安全摘要生成可解释 `risk_hits`；
+- 历史 CSV 候选按账户/时间范围每 500 个账户分批查询，再按 `(transaction_time, id)` 在内存中稳定计算，不使用逐交易 SQL；
+- V9 `review_tasks` 以真实外键区分对账异常与风险命中来源，由 CHECK、唯一键和 RESTRICT 外键保护来源、状态、幂等和证据关系；
+- 对账 results、risk hits、review tasks 和 job `COMPLETED` 同事务提交，规则/风险/审核写入失败整体回滚，重复 MQ 和 ACK 丢失红投无重复副作用；
+- 314 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险/审核任务生成和应用健康验收。
 
 ## 本地运行
 
@@ -90,7 +95,7 @@ $env:JWT_SECRET_BASE64 = [Convert]::ToBase64String($jwtKeyBytes)
 
 不要把真实 JWT 密钥写入仓库、文档或命令输出。
 
-### 3. 启动 MySQL
+### 3. 启动 MySQL 和 RabbitMQ
 
 ```powershell
 docker compose up -d
@@ -199,9 +204,10 @@ GET    /api/reconciliation-jobs/{reconciliationJobId}/results?page=1&size=20&res
 
 ## 当前限制
 
-- 尚未实现风险识别、异常审核和审计；
+- 已生成异常/风险审核任务，但尚未实现审核分页/详情接口、`CONFIRMED/IGNORED` 决策、乐观锁和审计日志；
 - 导入和对账消费者采用单事务任务行锁，正常处理中间态不会独立提交，也不提供跨事务可见的处理租约；
 - DLQ 目前依赖运维排查，尚未提供失败任务的人工重跑、覆盖导入或管理接口；
+- 风险候选查询在 4,000 条合成数据上由 MySQL 优化器选择全表扫描；当时估算命中 15.89% 且数据量小，Day 3 未根据单次合成样本追加索引，留待 Week 6 用更真实数据规模压测后决定；
 - 不提供复杂模糊匹配、金额容差或人工确认；Redis 尚未引入。
 
 ## 当前范围

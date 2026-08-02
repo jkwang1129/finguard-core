@@ -193,6 +193,41 @@ public interface TransactionMapper extends BaseMapper<Transaction> {
     );
 
     @Select("""
+            <script>
+            SELECT id,
+                   account_id AS accountId,
+                   import_job_id AS importJobId,
+                   external_transaction_no AS externalTransactionNo,
+                   direction,
+                   amount,
+                   transaction_time AS transactionTime,
+                   description,
+                   source,
+                   created_at AS createdAt,
+                   updated_at AS updatedAt,
+                   deleted
+            FROM transactions
+            WHERE source = 'CSV_IMPORT'
+              AND deleted = 0
+              AND account_id IN
+              <foreach collection="accountIds"
+                       item="accountId"
+                       open="("
+                       separator=","
+                       close=")">
+                #{accountId}
+              </foreach>
+              AND transaction_time BETWEEN #{fromTime} AND #{toTime}
+            ORDER BY account_id ASC, transaction_time ASC, id ASC
+            </script>
+            """)
+    List<Transaction> selectCsvByAccountsAndTime(
+            @Param("accountIds") List<Long> accountIds,
+            @Param("fromTime") LocalDateTime fromTime,
+            @Param("toTime") LocalDateTime toTime
+    );
+
+    @Select("""
             SELECT id,
                    account_id AS accountId,
                    import_job_id AS importJobId,

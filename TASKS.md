@@ -35,6 +35,8 @@
 | Week 4 Day 7 | 已完成 | 综合验收真实异步闭环、可靠性故障路径、幂等、清理并完成周复盘 |
 | Week 5 Day 1 | 已完成 | 风险、审核、Redis、审计契约与 Day 2～Day 6 实现边界已锁定 |
 | Week 5 Day 2 | 已完成 | V8 风险命中真源、批量持久层、规则契约和真实验收完成 |
+| Week 5 Day 3 | 已完成 | 三条风险规则、V9 审核任务真源、任务生成与对账事务接入已完成真实验收 |
+| Week 5 Day 4 | 下一里程碑 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1303,26 +1305,106 @@
 
 ### Week 5 Day 3：三条风险规则与审核任务生成
 
-- **状态**：未开始
-- **业务目标**：在对账完成后执行最多三条可解释风险规则，并把需要人工判断的风险命中和对账异常稳定转换为待审核任务。
-- **范围边界**：实现 `LargeAmountRule`、`DuplicateTransactionRule`、`FrequentTransactionRule` 和审核任务生成；不实现复杂评分模型、规则 DSL、异步规则消息、人工审核决策、Redis 或审计查询。
+- **状态**：已完成
+- **业务目标**：让每次成功对账在同一 MySQL 事务内完成“结果落库 → 三条规则评估 → 风险命中落库 → 异常/风险转待审核任务 → 对账任务进入 `COMPLETED`”，且每条命中可解释、重复执行无重复副作用、任一步失败整体回滚。
+- **进入本日时的基线**：
+  - Week 5 Day 2 已在提交 `0cbb71a` 完成；最新 Flyway 为 V8，共 12 张业务表，已有 `risk_hits`、三组规则/原因枚举、不可变 `RiskRule` 输入输出与批量持久化 Mapper。
+  - Day 2 的实际回归基线为 297/297，0 failures、0 errors、0 skipped；这只是进入 Day 3 的历史证据，Day 3 必须重新实跑并记录新数字。
+  - 进入 Day 3 时仍没有三条具体规则、`RiskProperties`、`RiskEvaluationService`、`review_tasks` 或 `review` 模块；对账事务是保存结果后直接将 job 置为 `COMPLETED`。
+- **本日数据流**：
+
+  ```text
+  RabbitMQ 对账消费者锁定 PENDING / PROCESSING job
+    → 计算并批量保存 reconciliation_results
+    → 按 jobId 一次回查已持久化结果及真实 ID
+    → 按账户 + 总时间边界分批预加载历史 CSV_IMPORT 候选
+    → 为每个结果组装 RiskEvaluationContext
+    → 按 LARGE_AMOUNT → POSSIBLE_DUPLICATE → FREQUENT_TRANSACTION 执行
+    → 批量保存 risk_hits
+    → 为三类对账异常和每条 risk_hit 生成 PENDING review_tasks
+    → 计数校验后将 reconciliation_job 置为 COMPLETED
+    → 事务提交后消费者才 ACK
+  ```
+- **范围边界**：
+  - 只实现类型安全规则配置、三条纯计算规则、批量候选查询、风险评估编排、V9/审核任务持久层、任务生成器和对账事务接入。
+  - Day 3 不提供 `review` Controller、HTTP 详情/分页/决策接口，不修改 RBAC；审核查询、`PENDING → CONFIRMED / IGNORED`、乐观锁和权限矩阵统一留给 Day 4。
+  - 不新增风险独立消息、RabbitMQ 拓扑或 Outbox 事件；风险评估是已有对账消费事务的一部分。
+  - 不实现审计、Redis、限流、动态规则平台、Drools、DSL、机器学习评分、审核撤销/重开或 Week 6 能力。
+  - 不修改已应用的 V1～V8；V9 一旦应用只能由后续追加迁移演进。未经真实 `EXPLAIN` 证明不新增“猜测型”索引。
+- **执行顺序**：
+  1. 根据 Day 1 契约和 Day 2 真实代码完成 `week5-day3-risk-rules-and-review-task-design.md`，先锁定查询边界、事务归属、幂等冲突语义和测试矩阵。
+  2. 先为三条规则写失败单测，再实现 `RiskProperties`、配置绑定/启动校验和三个规则类，保持规则无 Mapper、无事务、无副作用。
+  3. 新增历史 CSV 交易的账户/时间范围批量查询，以一次预加载 + 内存分组/滑动窗口代替逐交易 SQL。
+  4. 实现 `RiskEvaluationService`，稳定组装 context、跳过关闭规则、将命中转换为 `RiskHit`、分批写入并批量回查真实命中 ID；无命中时不执行空 INSERT。
+  5. 以持久层集成测试驱动 V9 和 `review` 模型/Mapper，验证来源二选一、`PENDING(version=0)` 状态形状、三个 RESTRICT 外键、两个唯一键及查询索引。
+  6. 实现 `ReviewTaskGenerator`：为 `UNMATCHED/DUPLICATE/SUSPICIOUS` 每条结果建一条异常任务，为每条 `risk_hit` 建一条风险任务；`MATCHED` 且无风险时不建任务。
+  7. 将结果回查、风险评估、风险命中、审核任务和 job `COMPLETED` 接入 `ReconciliationJobTransactionService` 的同一事务，保留现有失败分类、有限重试、DLQ、红投短路和提交后 ACK 语义。
+  8. 先跑规则、V9、编排/回滚和对账消费聚焦测试，再跑完整 `mvn clean test`；最后做真实 MySQL/RabbitMQ/HTTP 闭环、数据清理、范围审计、敏感信息检查和 `git diff --check`。
+- **关键设计决定**：
+  - 大额规则默认启用，阈值 `10000.00` CNY，`amount >= threshold` 即命中；金额使用 `BigDecimal.compareTo`，不使用 `double`。
+  - 疑似重复规则默认 5 分钟含边界；只统计同账户、同方向、精确同金额且 `(transaction_time, id)` 早于当前交易的 CSV 候选，只让排序靠后的交易命中。
+  - 高频规则默认 10 分钟含两端、同账户至少 5 笔 `EXPENSE`；第 5 笔及之后命中，同时刻用 ID 确定先后，历史候选可跨导入任务。
+  - 候选只查未删除 `CSV_IMPORT`，按账户分批并用本批最早/最晚交易加最大规则窗口形成总时间边界；具体命中由纯规则再过滤，禁止 N+1。
+  - 自定义多值 INSERT 不依赖批量回填自增 ID；对账结果按 jobId 回查，风险命中按 resultIds 回查，两条路径都必须稳定排序。
+  - `review_tasks` 使用 `reconciliation_result_id` 与 `risk_hit_id` 两个真实可空外键，由 CHECK 保证二选一；不用无法建立引用完整性的通用 `source_type + source_id`。
+  - 同一对账结果可同时产生 1 个对账异常任务和最多 3 个风险任务；它们表达不同事实，不互相覆盖。
+  - `uk_risk_hits_result_rule`、`uk_review_tasks_reconciliation_result` 和 `uk_review_tasks_risk_hit` 是最终幂等防线；不使用 `INSERT IGNORE` 或吞掉未分类 `DuplicateKeyException`。正常重复 MQ 应在终态短路中无副作用返回。
+  - 规则计算、命中落库、任务生成或计数不一致时必须抛出并回滚；不能留下部分 `risk_hits/review_tasks` 后仍把 job 标成 `COMPLETED`。
 - **任务**：
-  - [ ] 完成三条规则的阈值、查询窗口、命中原因和规则启用配置，规则失败不得伪造对账成功或审核结果。
-  - [ ] 新增 `V9__create_review_task_table.sql` 及 `review` 持久层，初始状态固定为 `PENDING`，同一来源对象只能生成一个任务；同步更新数据库基线断言。
-  - [ ] 将风险评估接入对账完成后的明确事务边界，重复消息和重复执行不产生重复风险命中或审核任务。
-  - [ ] 为 `UNMATCHED`、`DUPLICATE`、`SUSPICIOUS` 以及风险命中建立清晰、可查询的审核来源关系。
-  - [ ] 提供审核任务详情与分页查询，顺序稳定；写操作仍留给 Day 4。
-  - [ ] 覆盖规则单测、组合执行、批量查询、幂等、事务回滚、任务生成和 ADMIN/REVIEWER/匿名查询权限。
+  - [x] 新增 Day 3 设计文档，明确三条规则算法、配置校验、批量查询、V9 DDL、生成矩阵、事务/幂等/失败语义、测试、回滚和 Day 4 接口边界。
+  - [x] 新增并启用类型安全 `RiskProperties`；校验大额阈值为正且 scale 不超过 2，两个时间窗口可转为正整数秒，高频阈值为正，并支持三条规则独立启停。
+  - [x] 实现 `LargeAmountRule`、`DuplicateTransactionRule`、`FrequentTransactionRule`，只输出固定原因码、阈值/窗口快照和不含敏感文本的安全摘要。
+  - [x] 为对账结果和历史 CSV 交易增加必要的批量查询，账户 ID 按固定上限分批，不引入逐结果/逐规则 SQL；用真实 `EXPLAIN` 判断现有索引是否足够。
+  - [x] 实现 `RiskEvaluationService`，保证规则顺序、关闭规则跳过、无命中不写库、一个结果可保存多条不同规则命中，且批量写入数与候选命中数一致。
+  - [x] 新增 `V9__create_review_task_table.sql`，不修改 V1～V8；同步更新最新 Flyway 版本、业务表数、表结构、外键、CHECK、唯一键和索引基线断言。
+  - [x] 建立 `ReviewTaskSourceType`、`ReviewTaskStatus`、`ReviewTask`、`ReviewTaskMapper` 和批量写入/按来源批量回查能力；Day 3 不新增 Controller、查询 DTO 或决策 Service。
+  - [x] 实现 `ReviewTaskGenerator`，按生成矩阵转换对账异常与风险命中，插入前后都校验候选数/实际数，所有新任务固定为 `PENDING(version=0)`。
+  - [x] 修改 `ReconciliationJobTransactionService`，使对账结果、风险命中、审核任务和对账终态同事务提交；重复终态消息不重跑规则，失败时由现有重试/DLQ 链路接管。
+  - [x] 新增三条规则单测：阈值上下界、5 分钟/5 分 1 毫秒、10 分钟边界、第 4/5 笔、同时刻 ID 次序、账户/方向/金额隔离、规则关闭和非法配置。
+  - [x] 新增 V9/生成器集成测试：两种合法来源形状、全部非法状态/来源组合、未知外键、RESTRICT、单来源唯一、异常 + 多规则共存和稳定回查。
+  - [x] 新增事务与消费集成测试：无风险正常结果、三类对账异常、单/多规则命中、历史跨导入窗口、重复/并发消息、ACK 丢失红投、中途异常整体回滚和重试恢复。
+  - [x] 运行聚焦测试和完整 `mvn clean test`；使用真实 JWT/HTTP 触发异步导入与对账，用 MySQL 核对 result/hit/review 数量和 job 终态，然后清理验收数据、RabbitMQ 消息、临时凭据和端口。
+  - [x] 回填 Day 3 实际测试数字、迁移/索引证据、真实闭环结果、已知限制与验收结论；执行范围审计、敏感信息检查和 `git diff --check` 后再提交。
 - **关键文件**：
   - `docs/design/week5-day3-risk-rules-and-review-task-design.md`
   - `src/main/resources/db/migration/V9__create_review_task_table.sql`
-  - `src/main/java/com/finguard/core/risk/`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/risk/config/RiskProperties.java`
+  - `src/main/java/com/finguard/core/risk/rule/`
+  - `src/main/java/com/finguard/core/risk/service/RiskEvaluationService.java`
   - `src/main/java/com/finguard/core/review/`
-  - `src/main/java/com/finguard/core/reconciliation/`
+  - `src/main/java/com/finguard/core/reconciliation/mapper/ReconciliationResultMapper.java`
+  - `src/main/java/com/finguard/core/reconciliation/service/impl/ReconciliationJobTransactionService.java`
+  - `src/main/java/com/finguard/core/transaction/mapper/TransactionMapper.java`
   - `src/test/java/com/finguard/core/risk/`
   - `src/test/java/com/finguard/core/review/`
-- **验收**：三条规则的命中与不命中均可解释；重复/并发评估无重复记录；异常对账结果和风险命中生成正确数量的 `PENDING` 审核任务；聚焦与完整测试通过。
-- **提交建议**：`feat: add risk evaluation and review task generation`
+  - `src/test/java/com/finguard/core/reconciliation/`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+- **验收清单**：
+  - [x] 三条规则的命中、不命中、边界、关闭和非法配置均有确定性测试；金额、次数、阈值、窗口和原因摘要可从 `risk_hits` 解释。
+  - [x] 候选加载为账户分批查询 + 内存过滤/时间窗口，不存在逐交易 N+1；已运行真实 `EXPLAIN` 并记录暂不新增索引的证据。
+  - [x] 干净 MySQL 可从 V1→V9，V1～V8 checksum 不变；13 张业务表以及 V9 全部列、三个外键、CHECK、两个唯一键和查询索引均可复核。
+  - [x] `MATCHED` 且无风险不创建任务；三类异常结果各创建 1 条异常任务；每条风险命中各创建 1 条风险任务，且全部为 `PENDING(version=0)`。
+  - [x] 重复/并发 MQ、重复评估和 ACK 丢失红投不增加第二组 result/hit/review 副作用；唯一键仍作为最终防线。
+  - [x] 注入规则异常、风险写入失败或审核任务写入失败时，results/hits/review/job 终态整体回滚；现有重试/DLQ 语义没有被绕过。
+  - [x] 聚焦测试、数据库基线、完整 `mvn clean test` 和真实 MySQL/RabbitMQ/JWT/HTTP 闭环均为本日实跑，0 failures、0 errors、0 skipped，不复制 Day 2 的 297/297。
+  - [x] Day 4～Day 6 的审核决策、HTTP/RBAC、审计、Redis 和限流未偷跑；验收数据、消息、临时凭据和端口已清理，`git diff --check` 通过。
+- **验收结论**：
+  - 规则/配置/契约聚焦测试 13/13，V9/数据库基线聚焦测试 13/13，风险事务/并发/回滚聚焦测试 10/10，扩大聚焦回归 67/67，全部 0 failures、0 errors、0 skipped。
+  - 完整 `mvn clean test` 为 314/314，0 failures、0 errors、0 skipped，`BUILD SUCCESS`。
+  - 独立临时数据库从空库执行 V1→V9，最新版本 9，共 13 张业务表；V1～V8 的 8 个 checksum 与当前项目库全部一致。
+  - V9 真实验证 3 个 RESTRICT 外键、4 个 CHECK、2 个来源唯一键和 2 个分页索引；非法来源/状态形状、未知外键、重复来源和证据删除均被拒绝。
+  - 4,000 条合成交易上的真实 `EXPLAIN` 估算时间窗口命中 15.89%，MySQL 选择全表扫描；该数据规模与选择性下新索引收益未被证明，因此 Day 3 不追加猜测型索引，留到 Week 6 用更真实数据规模压测。
+  - 真实应用在 18080 端口返回 `UP`；ADMIN JWT/HTTP 异步导入为 `SUCCESS|5|5`，对账为 `COMPLETED|5|0|5|0|0`，SQL 证明 5 条 results、10 条 hits（大额 5/疑似重复 4/高频 1）和 15 条 `PENDING(version=0)` reviews（异常 5/风险 10）。
+  - 验收用户、账户、交易、results、hits、reviews、临时数据库和验收脚本已清理；8 个 RabbitMQ 业务队列 ready/unacked 全为 0，18080 无监听。
+- **学习重点**：
+  - 必须掌握：策略模式、`BigDecimal.compareTo`、开闭时间区间、稳定排序、滑动窗口、批量 SQL、事务原子性和数据库唯一键幂等。
+  - 边做边学：`@ConfigurationProperties` 类型安全配置/校验、多规则组合编排、多值 INSERT 后回查 ID、真实外键二选一建模、MQ 红投与业务幂等的区别。
+  - 留到 Day 4：分页/详情 HTTP 查询、REVIEWER 决策、条件更新乐观锁、`409` 冲突分类和审核权限矩阵。
+  - 本日不学不做：Drools/规则 DSL、机器学习风控、Redis 锁、新 MQ 事件、通用工作流引擎、审计与监控部署。
+- **常见错误预防**：不要让规则直接查库/写库；不要对每笔交易跑三次 SQL；不要用系统当前时间代替交易时间窗口；不要把 5 分钟/10 分钟含边界写成开区间；不要让同时刻的大 ID 交易提前影响小 ID；不要依赖批量自增 ID 回填；不要把对账异常任务和风险任务去重成一条；不要用 `INSERT IGNORE` 掩盖数据形状错误；不要在 Day 3 提前实现审核决策、RBAC、审计或 Redis。
+- **回滚**：Java、测试、配置和设计文档可按 Day 3 文件范围回退。V9 若仅应用于明确可重建的项目测试库，可随该测试环境重建回到 V8；若已进入共享或需保留数据的数据库，不得修改/删除 V9，只能新增补偿迁移。回滚不得删除已有导入/对账数据、MySQL/RabbitMQ 数据卷或 Week 4/Day 2 能力来掩盖失败。
+- **提交**：`feat: add risk evaluation and review task generation`
 
 ### Week 5 Day 4：异常审核接口与乐观锁并发控制
 
@@ -1467,4 +1549,5 @@
 | Week 4 Day 6 异步对账、有限重试与死信隔离 | `0015610` |
 | Week 4 Day 7 综合验收 | `c7a1156` |
 | Week 5 Day 1 风险、审核、Redis 与审计契约设计 | `71b432d` |
-| Week 5 Day 2 风险命中持久层与规则契约骨架 | 本次提交 |
+| Week 5 Day 2 风险命中持久层与规则契约骨架 | `0cbb71a` |
+| Week 5 Day 3 三条风险规则与审核任务生成 | 本次提交 |

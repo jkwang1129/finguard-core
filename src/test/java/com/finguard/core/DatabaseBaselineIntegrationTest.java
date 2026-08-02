@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("8");
+        assertThat(current.getVersion().getVersion()).isEqualTo("9");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -80,12 +80,78 @@ class DatabaseBaselineIntegrationTest {
             statement.setString(10, "import_job_files");
             statement.setString(11, "outbox_events");
             statement.setString(12, "risk_hits");
+            statement.setString(13, "review_tasks");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(12);
+                assertThat(resultSet.getInt(1)).isEqualTo(13);
             }
         }
+    }
+
+    @Test
+    void reviewSchemaShouldEnforceSourceStateAndIdempotency() {
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+                new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+
+        assertThat(jdbcTemplate.queryForList(
+                """
+                SELECT constraint_name, delete_rule
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND constraint_name IN (
+                      'fk_review_tasks_reconciliation_result',
+                      'fk_review_tasks_risk_hit',
+                      'fk_review_tasks_reviewer'
+                  )
+                ORDER BY constraint_name
+                """
+        )).hasSize(3)
+                .allSatisfy(row -> assertThat(row.get("delete_rule"))
+                        .isEqualTo("RESTRICT"));
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name = 'review_tasks'
+                  AND constraint_type = 'CHECK'
+                  AND constraint_name IN (
+                      'chk_review_tasks_source_type',
+                      'chk_review_tasks_status',
+                      'chk_review_tasks_source',
+                      'chk_review_tasks_state'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'review_tasks'
+                  AND index_name IN (
+                      'uk_review_tasks_reconciliation_result',
+                      'uk_review_tasks_risk_hit'
+                  )
+                  AND non_unique = 0
+                """,
+                Integer.class
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(DISTINCT index_name)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'review_tasks'
+                  AND index_name IN (
+                      'idx_review_tasks_status_created_id',
+                      'idx_review_tasks_source_status'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(2);
     }
 
     @Test

@@ -23,6 +23,17 @@ spring:
       file-size-threshold: 5MB
 
 finguard:
+  risk:
+    large-amount:
+      enabled: "${FINGUARD_RISK_LARGE_AMOUNT_ENABLED:true}"
+      threshold: "${FINGUARD_RISK_LARGE_AMOUNT_THRESHOLD:10000.00}"
+    possible-duplicate:
+      enabled: "${FINGUARD_RISK_POSSIBLE_DUPLICATE_ENABLED:true}"
+      window: "${FINGUARD_RISK_POSSIBLE_DUPLICATE_WINDOW:5m}"
+    frequent-transaction:
+      enabled: "${FINGUARD_RISK_FREQUENT_TRANSACTION_ENABLED:true}"
+      window: "${FINGUARD_RISK_FREQUENT_TRANSACTION_WINDOW:10m}"
+      threshold-count: "${FINGUARD_RISK_FREQUENT_TRANSACTION_THRESHOLD_COUNT:5}"
   messaging:
     import-consumer:
       enabled: "${FINGUARD_IMPORT_CONSUMER_ENABLED:true}"
