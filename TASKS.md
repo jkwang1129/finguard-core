@@ -33,7 +33,8 @@
 | Week 4 Day 5 | 已完成 | 导入消费幂等、任务行锁、ACK 丢失红投和消费者崩溃恢复已完成真实验收 |
 | Week 4 Day 6 | 已完成 | 异步对账消费者、两级有限重试、失败分类、DLQ 隔离和真实验收完成 |
 | Week 4 Day 7 | 已完成 | 综合验收真实异步闭环、可靠性故障路径、幂等、清理并完成周复盘 |
-| Week 5 | 待规划 | Redis、风险规则、异常审核、乐观锁和审计 |
+| Week 5 Day 1 | 已完成 | 风险、审核、Redis、审计契约与 Day 2～Day 6 实现边界已锁定 |
+| Week 5 Day 2 | 待开始 | 风险命中持久层与规则执行骨架 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1113,7 +1114,239 @@
 - **回滚**：本日原则上只新增复盘证据和更新文档，不回退 Day 1～Day 6 已验证的异步实现。若本日尚未执行，回滚只需删除本节并恢复当前进度/路线表；若验收中产生临时数据或消息，按本项目表的外键顺序和 `finguard.*` 队列范围清理，不删除 V1～V7、不重放已完成业务任务、不删除 RabbitMQ 整个数据卷来掩盖问题。
 - **提交建议**：`docs: complete week 4 acceptance review`
 
-## 7. 后续路线
+## 7. Week 5：风险识别、异常审核、Redis 与审计闭环
+
+### Week 5 Day 1：业务契约、状态流转与数据模型设计
+
+- **状态**：已完成
+- **业务目标**：在编写代码前锁定“对账完成 → 风险识别 → 异常进入审核 → REVIEWER 确认或忽略 → 关键操作留痕”的业务闭环，同时确定 Redis 统计缓存与登录/上传限流的最小边界。
+- **当前基线**：
+  - Week 4 已在提交 `c7a1156` 收口；当前真实能力是 V1～V7、异步导入/对账、Outbox、手动 ACK、终态幂等、两级有限重试和独立 DLQ。
+  - Week 4 验收基线为完整 `mvn clean test` 287/287；进入 Day 1 时必须重新运行，不能直接把历史数字当作本日证据。
+  - 当前代码中没有 `risk`、`review`、`audit`、`statistics` 或 `ratelimit` 业务模块，Docker Compose 中也没有 Redis；这些都是本周计划，不得描述为已实现。
+- **目标请求流**：
+
+  ```text
+  对账任务到达 COMPLETED
+    → 读取 reconciliation_results 与相关 CSV_IMPORT 交易
+    → 运行最多三条可解释风险规则
+    → 幂等保存 risk_hits
+    → 为对账异常或风险命中幂等生成 PENDING review_tasks
+    → REVIEWER 查询任务并携带 version 提交 CONFIRMED / IGNORED
+    → 业务状态与 audit_logs 在同一事务中提交
+    → statistics 聚合 MySQL 真源，Redis 只缓存结果
+
+  登录 / CSV 上传请求
+    → Redis 原子限流判断
+    → 允许时进入现有认证或导入流程
+    → 超限返回 429 + Retry-After
+  ```
+
+  该流程是 Day 1 要评审并锁定的目标，不代表仓库当前已经实现。
+- **范围边界**：
+  - 本日只新增设计文档并更新任务入口，不新增依赖、Docker 服务、Flyway 迁移、Java 业务代码、配置项或接口。
+  - 不修改已应用的 V1～V7，不预建空模块，不写 TODO 业务骨架，不添加 Redis 容器来冒充设计完成。
+  - 不引入 Drools、规则 DSL、规则版本平台、复杂评分模型、通用工作流/状态机、Redis 分布式锁、Token 黑名单、前端或 Week 6 监控部署能力。
+  - MySQL 继续是业务真源；Redis 只用于统计缓存和限流，不能承担审核幂等、最终一致性或业务状态真源职责。
+- **执行顺序**：
+  1. 核对 `PROJECT_BRIEF.md`、Week 4 复盘、V6/V7 迁移、对账完成事务、现有权限和错误响应，建立“已有事实 / Week 5 计划”清单。
+  2. 定义业务术语：风险命中、对账异常、审核任务、确认、忽略、审计事件、统计快照和限流窗口，避免同一词在不同模块含义不同。
+  3. 画出正常链路、无风险链路、重复执行、规则异常、并发审核、审计失败、Redis 未命中和 Redis 不可用八类时序。
+  4. 逐条评审三条风险规则的输入数据、阈值、窗口、原因码、规则启停、幂等键和边界样例。
+  5. 锁定审核任务生成矩阵、状态机、版本字段、权限矩阵、HTTP 契约和并发冲突语义。
+  6. 设计 `risk_hits`、`review_tasks`、`audit_logs` 的 ER 图、字段、约束、索引、外键、唯一键和 V8～V10 追加迁移顺序。
+  7. 锁定统计接口、Redis key/TTL/序列化/失效策略，以及登录和上传限流的 Key、窗口、阈值、原子性与降级行为。
+  8. 定义五类审计事件的触发点、操作者、目标对象、安全摘要、事务边界和重复执行语义。
+  9. 形成 Day 2～Day 6 的文件计划与验收矩阵，逐项确认没有把后续实现提前塞入 Day 1。
+  10. 完成设计评审、完整回归、敏感信息检查、`git diff --check` 和提交前范围复核。
+- **任务**：
+  - [x] 新增 `docs/design/week5-day1-risk-review-redis-audit-contract.md`，包含业务上下文、术语表、模块边界、请求流、事务边界和失败路径。
+  - [x] 定义 `LargeAmountRule`：评审对象、金额阈值、`BigDecimal` 比较方式、启用开关、稳定规则/原因码、阈值快照和命中/不命中样例。
+  - [x] 定义 `DuplicateTransactionRule`：与现有交易唯一键、文件内重复、对账 `DUPLICATE` 的职责差异，避免把同一事实重复建模三次。
+  - [x] 定义 `FrequentTransactionRule`：账户维度、方向是否参与、时间窗口、次数阈值、边界时刻和批量查询方案，禁止逐条 N+1 查询。
+  - [x] 锁定风险命中幂等键，候选为 `(reconciliation_job_id, csv_transaction_id, rule_code)`；明确重复 MQ、任务重跑和并发评估只产生一条命中。
+  - [x] 建立审核任务生成矩阵：`UNMATCHED`、`DUPLICATE`、`SUSPICIOUS` 和三类风险命中分别是否生成任务、来源字段为何、如何防止重复。
+  - [x] 评审审核来源的关系模型；优先使用可验证外键和“恰好一个来源”的检查约束，避免只存 `source_type + source_id` 导致数据库无法保证引用存在。
+  - [x] 定义审核状态 `PENDING → CONFIRMED / IGNORED`、期望 `version`、条件更新、非法迁移、重复提交、并发冲突和统一 `409` 错误码。
+  - [x] 锁定审核接口和权限矩阵：列表、详情、确认、忽略、分页/筛选参数，以及 ADMIN、REVIEWER、匿名、无权角色和不存在资源的响应。
+  - [x] 设计 `risk_hits`、`review_tasks`、`audit_logs` 的字段类型、金额精度、时间、外键删除策略、唯一约束、检查约束、查询索引和 V8～V10 迁移顺序。
+  - [x] 解决审计操作者模型：用户动作关联 `users.id`，异步系统动作保留原请求发起人或明确 `SYSTEM`，并用约束防止二者同时缺失或冲突。
+  - [x] 定义审计白名单：CSV 上传、导入失败、对账完成、审核确认、审核忽略；明确成功/失败何时落库以及重复消息不重复写审计的规则。
+  - [x] 定义 `GET /api/statistics/overview` 的最小响应字段、授权、MySQL 聚合真源、Redis key、TTL、缓存未命中、提交后失效和 Redis 故障降级。
+  - [x] 定义登录/上传限流的 Key 维度、阈值、固定窗口、原子操作、`429 + Retry-After`、窗口恢复和 Redis 故障策略；Key 不包含密码、JWT 或可直接枚举的敏感值。
+  - [x] 制定自动化测试矩阵：纯规则单测、数据库约束、任务幂等、事务回滚、并发审核、权限、审计脱敏、缓存一致性、限流原子性和 Redis 降级。
+  - [x] 明确 Day 2～Day 6 的设计文档、迁移、模块、接口和测试文件清单，并为每个 Day 保留独立回滚边界。
+  - [x] 运行完整 `mvn clean test`，记录实际用例数、失败、错误和跳过数；执行 `git diff --check` 和范围审计。
+- **关键文件**：
+  - `TASKS.md`
+  - `PROJECT_BRIEF.md`
+  - `README.md`
+  - `docs/design/week5-day1-risk-review-redis-audit-contract.md`
+  - `docs/review/week4-review.md`
+  - `src/main/resources/db/migration/V6__create_reconciliation_tables.sql`
+  - `src/main/resources/db/migration/V7__create_import_file_and_outbox_tables.sql`
+  - `src/main/java/com/finguard/core/reconciliation/service/impl/ReconciliationJobTransactionService.java`
+  - `src/main/java/com/finguard/core/importjob/service/impl/ImportJobTransactionService.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/resources/application.yml`
+  - `docker-compose.yml`
+- **验收标准**：
+  - 设计文档包含目标、非目标、现状、术语、请求流、异常流、模块依赖、事务边界、状态机、权限矩阵、错误码、ER 图、索引依据、Redis 契约、审计矩阵和测试矩阵。
+  - 三条风险规则分别具有唯一职责、确定输入、可配置阈值、稳定规则/原因码、命中与不命中样例；不会与交易唯一键或对账分类职责混淆。
+  - `risk_hits`、`review_tasks`、`audit_logs` 的候选结构能够使用真实外键、唯一约束、检查约束和版本字段保护引用、幂等与并发正确性。
+  - 审核任务生成矩阵没有歧义；同一来源不会重复建任务；两个审核人基于同一版本提交时只有一个允许成功，失败方为稳定 `409`。
+  - 权限矩阵明确到每个接口；`401`、`403`、`404`、`409`、`429` 的责任层和数据库副作用均有测试入口。
+  - 五类审计事件逐项明确触发点、actor、target、result、summary、事务和幂等语义；设计中没有密码、JWT、原始 CSV、SQL、内部异常或堆栈字段。
+  - Redis 设计能说明缓存穿透/击穿/雪崩在本项目的最小处理、统计缓存如何失效、限流如何保持原子、Redis 不可用时如何降级，以及为什么 Redis 不是最终正确性保证。
+  - Day 2～Day 6 的实现顺序、关键文件和验收边界可直接执行；Day 1 Git 变更只包含 `TASKS.md` 和 Day 1 设计文档，不出现 Java、SQL、依赖、配置或 Docker 改动。
+  - 完整 `mvn clean test` 不少于当前 287 项基线，0 failures、0 errors、0 skipped；`git diff --check`、敏感信息检查和范围审计通过。
+- **验收结论**：Day 1 设计评审完成，三条风险规则、审核状态机与权限、V8～V10 候选模型、五类审计事件、统计缓存、固定窗口限流、Redis fail-open 和 Day 2～Day 6 边界均已锁定。完整 `mvn clean test` 实跑 287/287，0 failures、0 errors、0 skipped；MySQL 8.4.10 与 RabbitMQ 4.3.4 均为 healthy。变更仅包含 `TASKS.md` 与本日设计文档，未新增 Java、SQL、依赖、配置或 Docker 服务；敏感信息检查、范围审计和 `git diff --check` 通过。
+- **学习重点**：策略模式与责任链的取舍、领域状态与数据库约束、乐观锁、幂等键、事务一致性、缓存旁路模式、缓存失效、固定窗口限流、Redis 原子操作、审计不可变性，以及 `401/403/404/409/429` 的边界。
+- **常见错误预防**：不要在 Day 1 写代码或迁移；不要把对账 `SUSPICIOUS` 与风险命中混为一张表；不要用无外键的通用 `source_id` 草率建模；不要用 Redis 锁替代数据库乐观锁；不要缓存进行中的任务详情；不要让审核状态和审计日志分属两个无法保证一致的提交；不要把明文用户名、密码、JWT、CSV 或异常堆栈写进 Redis key/审计摘要；不要预填测试通过数字。
+- **回滚**：Day 1 原则上只有任务清单和设计文档；回滚时只删除本日新增设计文档并恢复本节，不删除 V1～V7、Week 4 代码、MySQL/RabbitMQ 数据卷或现有测试。若评审中产生临时图表或实验文件，只清理本项目明确创建且可再生的临时文件。
+- **提交**：`docs: design week 5 risk review redis and audit contract`
+
+### Week 5 Day 2：风险命中持久层与规则执行骨架
+
+- **状态**：未开始
+- **业务目标**：建立可追踪、可去重的风险命中真源，并用简单策略接口承载规则，后续审核不能只依赖内存计算结果。
+- **范围边界**：只完成追加迁移、风险模块持久层、规则接口和纯规则测试；不开放审核写接口，不接入 Redis，不实现审计日志，不修改 V1～V7。
+- **任务**：
+  - [ ] 新增 `V8__create_risk_hit_table.sql`，创建风险命中表并落实规则代码、业务对象、原因、阈值快照、命中时间和唯一幂等约束；同步更新最新 Flyway 版本和表数量断言。
+  - [ ] 建立 `risk` 模块的 Entity、Mapper、枚举、查询模型和 Service 边界。
+  - [ ] 定义统一 `RiskRule` 接口与 `RiskRuleResult`，由 Spring 注入有序规则集合，不使用反射或硬编码 `if/else` 总开关。
+  - [ ] 先实现规则输入规范化和确定性规则骨架，金额继续使用 `BigDecimal`，时间继续使用固定业务时区。
+  - [ ] 覆盖迁移、外键、唯一约束、Mapper、规则启停、阈值边界和无命中路径测试。
+- **关键文件**：
+  - `docs/design/week5-day2-risk-persistence-and-rule-engine-design.md`
+  - `src/main/resources/db/migration/V8__create_risk_hit_table.sql`
+  - `src/main/java/com/finguard/core/risk/`
+  - `src/test/java/com/finguard/core/risk/`
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+- **验收**：干净 MySQL 可从 V1 迁移到最新版本；同一规则与业务对象的重复命中只保留一条；规则边界和持久层测试通过，完整 `mvn clean test` 与 `git diff --check` 通过。
+- **提交建议**：`feat: add risk persistence and rule foundation`
+
+### Week 5 Day 3：三条风险规则与审核任务生成
+
+- **状态**：未开始
+- **业务目标**：在对账完成后执行最多三条可解释风险规则，并把需要人工判断的风险命中和对账异常稳定转换为待审核任务。
+- **范围边界**：实现 `LargeAmountRule`、`DuplicateTransactionRule`、`FrequentTransactionRule` 和审核任务生成；不实现复杂评分模型、规则 DSL、异步规则消息、人工审核决策、Redis 或审计查询。
+- **任务**：
+  - [ ] 完成三条规则的阈值、查询窗口、命中原因和规则启用配置，规则失败不得伪造对账成功或审核结果。
+  - [ ] 新增 `V9__create_review_task_table.sql` 及 `review` 持久层，初始状态固定为 `PENDING`，同一来源对象只能生成一个任务；同步更新数据库基线断言。
+  - [ ] 将风险评估接入对账完成后的明确事务边界，重复消息和重复执行不产生重复风险命中或审核任务。
+  - [ ] 为 `UNMATCHED`、`DUPLICATE`、`SUSPICIOUS` 以及风险命中建立清晰、可查询的审核来源关系。
+  - [ ] 提供审核任务详情与分页查询，顺序稳定；写操作仍留给 Day 4。
+  - [ ] 覆盖规则单测、组合执行、批量查询、幂等、事务回滚、任务生成和 ADMIN/REVIEWER/匿名查询权限。
+- **关键文件**：
+  - `docs/design/week5-day3-risk-rules-and-review-task-design.md`
+  - `src/main/resources/db/migration/V9__create_review_task_table.sql`
+  - `src/main/java/com/finguard/core/risk/`
+  - `src/main/java/com/finguard/core/review/`
+  - `src/main/java/com/finguard/core/reconciliation/`
+  - `src/test/java/com/finguard/core/risk/`
+  - `src/test/java/com/finguard/core/review/`
+- **验收**：三条规则的命中与不命中均可解释；重复/并发评估无重复记录；异常对账结果和风险命中生成正确数量的 `PENDING` 审核任务；聚焦与完整测试通过。
+- **提交建议**：`feat: add risk evaluation and review task generation`
+
+### Week 5 Day 4：异常审核接口与乐观锁并发控制
+
+- **状态**：未开始
+- **业务目标**：允许 REVIEWER 查询异常并执行确认或忽略，同时保证两个审核人并发提交时只有一个状态迁移成功。
+- **范围边界**：只实现审核查询、决策、状态校验、乐观锁和权限矩阵；不使用 Redis 锁、数据库悲观长事务、通用工作流框架或审核撤销/重开功能。
+- **任务**：
+  - [ ] 实现审核任务详情、分页筛选和决策接口，决策请求携带期望 `version`。
+  - [ ] 使用数据库条件更新完成 `PENDING → CONFIRMED / IGNORED`，同时递增版本；更新数为 0 时区分不存在、已处理和版本冲突。
+  - [ ] 两个并发请求读取同一版本后只能有一个成功，失败方返回稳定 `409`，不得覆盖先完成的决策人、结论或时间。
+  - [ ] REVIEWER 可执行审核；ADMIN/REVIEWER 查询、匿名 `401`、无权角色 `403` 和不存在资源 `404` 按 Day 1 契约落地。
+  - [ ] 覆盖状态迁移、重复提交、过期版本、并发竞争、事务回滚和拒绝请求无副作用测试。
+- **关键文件**：
+  - `docs/design/week5-day4-review-workflow-and-optimistic-lock-design.md`
+  - `src/main/java/com/finguard/core/review/controller/`
+  - `src/main/java/com/finguard/core/review/service/`
+  - `src/main/java/com/finguard/core/review/mapper/`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/test/java/com/finguard/core/review/`
+- **验收**：真实 MySQL 并发实验中只有一个审核请求成功；终态不可重复修改；HTTP 状态与数据库副作用一致；聚焦、完整回归和 `git diff --check` 通过。
+- **提交建议**：`feat: add optimistic exception review workflow`
+
+### Week 5 Day 5：关键业务操作审计日志
+
+- **状态**：未开始
+- **业务目标**：让 CSV 上传、导入失败、对账完成、审核确认和审核忽略具备可追溯证据，同时不泄漏敏感数据或把普通查询写成海量日志。
+- **范围边界**：只审计项目规定的五类关键操作；不记录每次查询，不做通用 AOP 全量拦截、复杂合规平台、日志修改/删除接口或历史数据回填。
+- **任务**：
+  - [ ] 新增 `V10__create_audit_log_table.sql`，创建不可变审计表，记录动作、业务对象、对象 ID、操作者、结果、安全摘要和发生时间；同步更新数据库基线断言。
+  - [ ] 建立 `audit` 模块及白名单动作枚举，写入 API 不向 Controller 暴露任意动作字符串。
+  - [ ] 将审计写入放进对应业务事务：业务失败不能留下“成功”审计，审核决策与审计必须一起提交或一起回滚。
+  - [ ] 处理异步系统动作的操作者语义，保留原请求发起人或明确 `SYSTEM`，不能伪造当前登录用户。
+  - [ ] 提供只读分页查询并落实权限；响应不包含 JWT、密码、原始文件、SQL、内部异常或堆栈。
+  - [ ] 覆盖五类动作、事务回滚、重复消息、重复审核和敏感信息屏蔽测试。
+- **关键文件**：
+  - `docs/design/week5-day5-audit-log-design.md`
+  - `src/main/resources/db/migration/V10__create_audit_log_table.sql`
+  - `src/main/java/com/finguard/core/audit/`
+  - `src/main/java/com/finguard/core/importjob/`
+  - `src/main/java/com/finguard/core/reconciliation/`
+  - `src/main/java/com/finguard/core/review/`
+  - `src/test/java/com/finguard/core/audit/`
+- **验收**：五类关键动作各产生正确且唯一的安全审计记录；业务回滚不产生假成功日志；分页与权限稳定；完整回归通过且敏感信息检查无命中。
+- **提交建议**：`feat: add critical business audit logs`
+
+### Week 5 Day 6：Redis 统计缓存、登录限流与上传限流
+
+- **状态**：未开始
+- **业务目标**：使用一个 Redis 实例完成可解释的统计缓存和两类固定窗口限流，同时保证数据库仍是真源，Redis 故障不会破坏最终业务正确性。
+- **范围边界**：只实现一个统计聚合查询缓存、登录限流和 CSV 上传限流；不实现 Session、JWT 黑名单、分布式锁、通用缓存平台、热点 Key 自动发现、复杂滑动窗口或 Redis 作为唯一幂等真源。
+- **任务**：
+  - [ ] 在 Docker Compose、配置示例和 Spring Boot 中加入 Redis，配置健康检查、超时、序列化、key 前缀与外置密码。
+  - [ ] 实现 `GET /api/statistics/overview`，聚合导入、对账、风险和审核状态；使用明确 TTL 缓存，数据库是缓存未命中和降级时的真源。
+  - [ ] 在相关业务提交后失效统计缓存；事务回滚不得提前删除或写入错误缓存，禁止缓存进行中的不稳定对象详情。
+  - [ ] 使用 Redis 原子操作或 Lua 实现登录和上传固定窗口限流，返回统一 `429`、错误码和 `Retry-After`。
+  - [ ] 登录限流 Key 不泄漏明文密码或敏感用户名；上传按已认证用户及契约维度限流，越权请求不得先消耗业务配额。
+  - [ ] 按 Day 1 契约实现 Redis 不可用时的缓存降级和限流策略，并证明不会产生重复上传、重复交易或绕过数据库唯一约束。
+  - [ ] 覆盖缓存命中/未命中/失效/TTL、并发限流、窗口恢复、`429`、Redis 重启与降级测试。
+- **关键文件**：
+  - `docs/design/week5-day6-redis-cache-and-rate-limit-design.md`
+  - `pom.xml`
+  - `docker-compose.yml`
+  - `.env.example`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/statistics/`
+  - `src/main/java/com/finguard/core/ratelimit/`
+  - `src/test/java/com/finguard/core/statistics/`
+  - `src/test/java/com/finguard/core/ratelimit/`
+- **验收**：真实 Redis 可观察缓存命中、TTL 和业务提交后失效；登录/上传超过阈值返回 `429 + Retry-After`，窗口结束后恢复；暂停 Redis 时行为符合降级契约且 MySQL/RabbitMQ 业务正确性不受破坏；完整测试通过。
+- **提交建议**：`feat: add redis statistics cache and rate limits`
+
+### Week 5 Day 7：综合验收、清理与周复盘
+
+- **状态**：未开始
+- **业务目标**：从可重建环境证明 Week 5 的风险识别、异常审核、并发控制、审计、缓存和限流形成完整且可解释的闭环，并生成面试可复核证据。
+- **范围边界**：只验收 Week 5 已实现能力并修复真实缺陷；不新增 Week 6 的 Docker 镜像、CI/CD、Linux 部署、Micrometer、Prometheus/Grafana、压测或安全报告功能。
+- **任务**：
+  - [ ] 新增 `docs/review/week5-review.md`，按 Day 记录设计承诺、实际实现、提交、偏差、限制和 Week 6 边界。
+  - [ ] 从确认可清理的环境验证 MySQL、RabbitMQ、Redis 健康，Flyway 与 Redis key/TTL/限流配置可自动重建。
+  - [ ] 运行风险、审核、审计、Redis、认证、导入、对账聚焦测试和完整 `mvn clean test`，记录实际数字。
+  - [ ] 使用真实 ADMIN/REVIEWER JWT + HTTP 跑通上传、异步导入、异步对账、风险命中、审核查询、确认/忽略和审计查询。
+  - [ ] 并发提交同一审核任务，验证一个成功、一个稳定 `409`，最终只有一个决策和一条对应审计记录。
+  - [ ] 验证统计缓存命中与失效、登录/上传 `429` 和窗口恢复；暂停 Redis 验证降级，不通过手工改库伪造成功。
+  - [ ] 复核重复 MQ、重复风险评估、重复审核、Outbox 重试和 Redis 故障均不会产生重复业务副作用。
+  - [ ] 清理验收数据、Redis key、RabbitMQ 消息、临时凭据、进程和端口；更新 README、TASKS 和 Git 里程碑索引。
+  - [ ] 执行范围审计、敏感信息检查、`git diff --check` 和提交前复核。
+- **关键文件**：
+  - `TASKS.md`
+  - `README.md`
+  - `docs/review/week5-review.md`
+  - `src/test/java/com/finguard/core/risk/`
+  - `src/test/java/com/finguard/core/review/`
+  - `src/test/java/com/finguard/core/audit/`
+  - `src/test/java/com/finguard/core/statistics/`
+  - `src/test/java/com/finguard/core/ratelimit/`
+- **验收**：三类风险规则、异常审核、乐观锁、五类审计、统计缓存和两类限流均有自动化与真实 HTTP/MySQL/Redis/RabbitMQ 证据；完整回归零失败/错误/跳过；数据、消息、缓存、凭据和端口清理完成。
+- **提交建议**：`docs: complete week 5 acceptance review`
+
+## 8. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
 
@@ -1121,10 +1354,10 @@
 |---|---|
 | Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
 | Week 4 | Day 1～Day 7 已完成；异步导入/对账、Outbox、重试/DLQ、综合验收与周复盘均已收口 |
-| Week 5 | Redis 缓存与限流、风险规则、异常审核、乐观锁、审计日志和周验收 |
+| Week 5 | Day 1～Day 7 已规划；风险、审核、乐观锁、审计、Redis 缓存/限流和周验收按顺序推进 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
-## 8. Git 里程碑索引
+## 9. Git 里程碑索引
 
 | 里程碑 | 提交 |
 |---|---|
@@ -1157,4 +1390,5 @@
 | Week 4 Day 4 异步导入消费者 | `e6c6edf` |
 | Week 4 Day 5 导入消费幂等与崩溃恢复 | `be4779b` |
 | Week 4 Day 6 异步对账、有限重试与死信隔离 | `0015610` |
-| Week 4 Day 7 综合验收 | 本次提交 |
+| Week 4 Day 7 综合验收 | `c7a1156` |
+| Week 5 Day 1 风险、审核、Redis 与审计契约设计 | 本次提交 |
