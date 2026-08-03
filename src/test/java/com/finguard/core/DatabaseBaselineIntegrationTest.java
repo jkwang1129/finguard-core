@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("9");
+        assertThat(current.getVersion().getVersion()).isEqualTo("10");
     }
 
     @Test
@@ -62,7 +62,7 @@ class DatabaseBaselineIntegrationTest {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
-                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         try (Connection connection = dataSource.getConnection();
@@ -81,12 +81,77 @@ class DatabaseBaselineIntegrationTest {
             statement.setString(11, "outbox_events");
             statement.setString(12, "risk_hits");
             statement.setString(13, "review_tasks");
+            statement.setString(14, "audit_logs");
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
-                assertThat(resultSet.getInt(1)).isEqualTo(13);
+                assertThat(resultSet.getInt(1)).isEqualTo(14);
             }
         }
+    }
+
+    @Test
+    void auditSchemaShouldEnforceShapeTraceabilityAndIdempotency() {
+        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate =
+                new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name = 'audit_logs'
+                  AND delete_rule = 'RESTRICT'
+                """,
+                Integer.class
+        )).isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name = 'audit_logs'
+                  AND constraint_type = 'CHECK'
+                  AND constraint_name IN (
+                      'chk_audit_logs_action',
+                      'chk_audit_logs_actor_type',
+                      'chk_audit_logs_outcome',
+                      'chk_audit_logs_actor',
+                      'chk_audit_logs_target',
+                      'chk_audit_logs_action_outcome',
+                      'chk_audit_logs_summary'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(7);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(DISTINCT index_name)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'audit_logs'
+                  AND index_name IN (
+                      'uk_audit_logs_action_import',
+                      'uk_audit_logs_action_reconciliation',
+                      'uk_audit_logs_action_review'
+                  )
+                  AND non_unique = 0
+                """,
+                Integer.class
+        )).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(DISTINCT index_name)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'audit_logs'
+                  AND index_name IN (
+                      'idx_audit_logs_action_created_id',
+                      'idx_audit_logs_initiated_created_id'
+                  )
+                """,
+                Integer.class
+        )).isEqualTo(2);
     }
 
     @Test

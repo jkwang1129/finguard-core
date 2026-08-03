@@ -1,6 +1,7 @@
 package com.finguard.core.review.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.finguard.core.audit.service.AuditLogService;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.review.dto.ReviewDecisionRequest;
 import com.finguard.core.review.dto.ReviewTaskQueryRequest;
@@ -46,6 +47,8 @@ class ReviewTaskServiceImplTest {
 
     @Mock
     private ReviewTaskMapper reviewTaskMapper;
+    @Mock
+    private AuditLogService auditLogService;
 
     private ReviewTaskServiceImpl service;
 
@@ -53,6 +56,7 @@ class ReviewTaskServiceImplTest {
     void setUp() {
         service = new ReviewTaskServiceImpl(
                 reviewTaskMapper,
+                auditLogService,
                 FIXED_CLOCK
         );
     }
@@ -168,6 +172,11 @@ class ReviewTaskServiceImplTest {
                         123_000_000
                 ),
                 "checked"
+        );
+        verify(auditLogService).recordReviewDecision(
+                31L,
+                7L,
+                ReviewDecision.CONFIRMED
         );
     }
 

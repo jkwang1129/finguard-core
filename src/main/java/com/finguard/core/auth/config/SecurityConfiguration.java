@@ -45,6 +45,10 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/api/audit-logs"
+                        ).hasRole(RoleCode.ADMIN.name())
+                        .requestMatchers(
+                                HttpMethod.GET,
                                 "/api/accounts",
                                 "/api/accounts/*",
                                 "/api/transactions",

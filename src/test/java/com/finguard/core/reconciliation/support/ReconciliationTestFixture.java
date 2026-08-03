@@ -152,6 +152,15 @@ public class ReconciliationTestFixture {
     public void clean() {
         jdbcTemplate.update(
                 """
+                DELETE al
+                FROM audit_logs al
+                INNER JOIN users u ON u.id = al.initiated_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
                 DELETE rt
                 FROM review_tasks rt
                 INNER JOIN risk_hits rh ON rh.id = rt.risk_hit_id

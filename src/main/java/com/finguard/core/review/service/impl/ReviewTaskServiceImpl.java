@@ -2,6 +2,7 @@ package com.finguard.core.review.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.finguard.core.audit.service.AuditLogService;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.review.dto.ReviewDecisionRequest;
@@ -32,12 +33,15 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
     private static final int MAX_NOTE_CODE_POINTS = 255;
 
     private final ReviewTaskMapper reviewTaskMapper;
+    private final AuditLogService auditLogService;
     private final Clock businessClock;
 
     public ReviewTaskServiceImpl(
             ReviewTaskMapper reviewTaskMapper,
+            AuditLogService auditLogService,
             Clock businessClock) {
         this.reviewTaskMapper = reviewTaskMapper;
+        this.auditLogService = auditLogService;
         this.businessClock = businessClock;
     }
 
@@ -123,6 +127,11 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
         if (updated != 1) {
             throw new ReviewVersionConflictException(reviewTaskId);
         }
+        auditLogService.recordReviewDecision(
+                reviewTaskId,
+                reviewerId,
+                request.decision()
+        );
         return toResponse(requireView(reviewTaskId));
     }
 

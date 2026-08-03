@@ -1,5 +1,7 @@
 package com.finguard.core.reconciliation.service.impl;
 
+import com.finguard.core.audit.model.ReconciliationAuditCounts;
+import com.finguard.core.audit.service.AuditLogService;
 import com.finguard.core.importjob.entity.ImportJob;
 import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.importjob.mapper.ImportJobMapper;
@@ -58,6 +60,7 @@ public class ReconciliationJobTransactionService {
     private final ReconciliationMatcher matcher;
     private final RiskEvaluationService riskEvaluationService;
     private final ReviewTaskGenerator reviewTaskGenerator;
+    private final AuditLogService auditLogService;
     private final Clock businessClock;
 
     public ReconciliationJobTransactionService(
@@ -69,6 +72,7 @@ public class ReconciliationJobTransactionService {
             ReconciliationMatcher matcher,
             RiskEvaluationService riskEvaluationService,
             ReviewTaskGenerator reviewTaskGenerator,
+            AuditLogService auditLogService,
             Clock businessClock) {
         this.reconciliationJobMapper = reconciliationJobMapper;
         this.outboxEventMapper = outboxEventMapper;
@@ -78,6 +82,7 @@ public class ReconciliationJobTransactionService {
         this.matcher = matcher;
         this.riskEvaluationService = riskEvaluationService;
         this.reviewTaskGenerator = reviewTaskGenerator;
+        this.auditLogService = auditLogService;
         this.businessClock = businessClock;
     }
 
@@ -190,6 +195,7 @@ public class ReconciliationJobTransactionService {
     public void processAndComplete(
             Long reconciliationJobId,
             Long importJobId) {
+        ReconciliationJob job = requireById(reconciliationJobId);
         List<Transaction> imported =
                 transactionMapper.selectImportedByJobId(importJobId);
         if (imported.isEmpty()) {
@@ -224,7 +230,11 @@ public class ReconciliationJobTransactionService {
                 persistedResults,
                 riskHits
         );
-        complete(reconciliationJobId, decisions);
+        complete(
+                reconciliationJobId,
+                job.getCreatedBy(),
+                decisions
+        );
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -378,6 +388,7 @@ public class ReconciliationJobTransactionService {
 
     private void complete(
             Long reconciliationJobId,
+            Long initiatedBy,
             List<ReconciliationDecision> decisions) {
         int matched = count(
                 decisions,
@@ -412,6 +423,17 @@ public class ReconciliationJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, reconciliationJobId);
+        auditLogService.recordReconciliationCompleted(
+                reconciliationJobId,
+                initiatedBy,
+                new ReconciliationAuditCounts(
+                        total,
+                        matched,
+                        unmatched,
+                        duplicate,
+                        suspicious
+                )
+        );
     }
 
     private int count(

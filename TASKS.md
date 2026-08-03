@@ -37,6 +37,8 @@
 | Week 5 Day 2 | 已完成 | V8 风险命中真源、批量持久层、规则契约和真实验收完成 |
 | Week 5 Day 3 | 已完成 | 三条风险规则、V9 审核任务真源、任务生成与对账事务接入已完成真实验收 |
 | Week 5 Day 4 | 已完成 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵已完成真实验收 |
+| Week 5 Day 5 | 已完成 | V10 审计真源、五类白名单事件、同事务回滚、ADMIN 查询与真实安全验收完成 |
+| Week 5 Day 6 | 当前任务 | Redis 统计缓存、登录限流与上传限流待设计实施 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1508,25 +1510,90 @@
 
 ### Week 5 Day 5：关键业务操作审计日志
 
-- **状态**：未开始
-- **业务目标**：让 CSV 上传、导入失败、对账完成、审核确认和审核忽略具备可追溯证据，同时不泄漏敏感数据或把普通查询写成海量日志。
-- **范围边界**：只审计项目规定的五类关键操作；不记录每次查询，不做通用 AOP 全量拦截、复杂合规平台、日志修改/删除接口或历史数据回填。
+- **状态**：已完成
+- **业务目标**：新增 V10 `audit_logs` 作为关键业务审计真源，让 CSV 首次受理、导入失败、对账完成、审核确认和审核忽略具备可追溯证据；业务状态与审计必须在同一事务一起提交或一起回滚，同时不泄漏敏感数据或把普通查询写成海量日志。
+- **当前基线**：
+  - Week 5 Day 4 已在提交 `286391f` 完成；当前真实能力是 V9、13 张业务表、审核查询/决策、REVIEWER 专属写权限和条件更新乐观锁，仓库尚无 V10、`audit` 模块或审计接口。
+  - 进入本日的完整回归历史基线为 326/326；实现完成后必须重新实跑并记录新数字，不能复制历史结果。
+- **目标链路**：
+
+  ```text
+  业务事务执行关键状态变化
+    → 由类型安全的 AuditLogService 生成白名单事件和固定安全摘要
+    → INSERT audit_logs
+    → 业务事实 + 审计证据一起 COMMIT
+    → 任一写入失败则整个事务 ROLLBACK
+
+  ADMIN GET /api/audit-logs
+    → 按 actionCode / initiatedBy 筛选
+    → created_at DESC, id DESC 稳定分页
+  ```
+- **范围边界**：
+  - 只审计 `CSV_UPLOAD_ACCEPTED`、`IMPORT_FAILED`、`RECONCILIATION_COMPLETED`、`REVIEW_CONFIRMED`、`REVIEW_IGNORED` 五类动作。
+  - 不审计普通查询、健康检查或每一行 CSV 错误；不做通用 AOP 全量拦截、复杂合规平台、历史回填或审计修改/删除/导出接口。
+  - 审计写入加入现有业务事务，不使用 `REQUIRES_NEW`；`IMPORT_FAILED` 表示任务合法进入 FAILED 终态，不单独记录导致业务事务整体回滚的未知异常。
+  - 不修改已应用的 V1～V9；不引入 Redis、统计、限流、新 RabbitMQ 事件、前端或 Week 6 监控部署能力。
+  - 不记录密码、JWT、原始 CSV、文件名/hash、交易描述、完整审核 note、SQL、自由异常消息或堆栈。
+- **关键设计决定**：
+  - `audit_logs` 保存 `action_code`、`actor_type`、`actor_user_id`、`initiated_by`、`outcome`、三选一 target、固定 `summary` 和 `created_at`；不增加 `updated_at`。
+  - USER actor 必须有用户外键且等于 initiatedBy；异步导入/对账以 SYSTEM 为 actor、原请求 `created_by` 为 initiatedBy，不能伪造成当前线程登录用户。
+  - 三个 target 外键恰好一个非空并与 action 匹配；FK 全部 RESTRICT，CHECK 保护 actor/target/outcome/summary 形状，action+target 唯一键提供最终幂等防线。
+  - `AuditLogMapper` 使用受限 insert/select，不继承暴露 update/delete 的通用 Mapper；本项目承诺应用层 append-only，不夸大为独立 WORM 防篡改系统。
+  - 安全摘要只由固定服务端模板产生；对账摘要仅包含守恒计数，导入失败不拼接 `error_summary`，审核摘要不拼接 decision note。
+  - 正常幂等优先复用文件唯一键、任务行锁、终态短路和审核条件更新；不使用 `INSERT IGNORE` 吞掉 CHECK/FK/未知唯一冲突。
+- **执行顺序**：
+  1. 新增 Day 5 设计文档并先写 V10 约束/失败测试，锁定五类合法形状和非法 actor/target/outcome 行为。
+  2. 新增 V10；把最新 Flyway 版本更新为 10、业务表数量更新为 14，并在真实 MySQL 核对 CHECK、FK、唯一键、RESTRICT 和索引。
+  3. 建立 audit 枚举、实体、受限 Mapper、Service、查询 DTO/VO 和固定摘要，完成持久层与分页测试。
+  4. 接入首次 CSV 上传事务；证明 audit 失败会回滚 job/file/Outbox，重复文件不重复审计。
+  5. 接入解析失败、全行失败、处理异常和重试耗尽四类 FAILED 路径；证明重复 MQ/ACK 丢失红投没有重复审计。
+  6. 接入对账完成事务；证明 results、risk hits、review tasks、job COMPLETED 和 completed audit 原子提交/回滚。
+  7. 接入审核决策事务；证明 confirm/ignore 正确映射、失败/冲突无审计、审计失败恢复 PENDING、两个并发请求只有成功方一条审计。
+  8. 实现 ADMIN 只读 `GET /api/audit-logs`，完成 actionCode/initiatedBy 筛选、稳定分页、参数校验和 401/403 零副作用测试。
+  9. 运行聚焦测试、数据库基线、完整回归和真实 MySQL/RabbitMQ/JWT/HTTP 验收；清理数据、消息、凭据和端口。
+  10. 执行敏感信息检查、Day 6 范围审计和 `git diff --check`，回填实际数字与验收结论后再提交。
 - **任务**：
-  - [ ] 新增 `V10__create_audit_log_table.sql`，创建不可变审计表，记录动作、业务对象、对象 ID、操作者、结果、安全摘要和发生时间；同步更新数据库基线断言。
-  - [ ] 建立 `audit` 模块及白名单动作枚举，写入 API 不向 Controller 暴露任意动作字符串。
-  - [ ] 将审计写入放进对应业务事务：业务失败不能留下“成功”审计，审核决策与审计必须一起提交或一起回滚。
-  - [ ] 处理异步系统动作的操作者语义，保留原请求发起人或明确 `SYSTEM`，不能伪造当前登录用户。
-  - [ ] 提供只读分页查询并落实权限；响应不包含 JWT、密码、原始文件、SQL、内部异常或堆栈。
-  - [ ] 覆盖五类动作、事务回滚、重复消息、重复审核和敏感信息屏蔽测试。
+  - [x] 新增 `docs/design/week5-day5-audit-log-design.md`，明确现状、五类事件、表结构、事务接入点、查询/RBAC、测试、回滚和学习边界。
+  - [x] 新增 `V10__create_audit_log_table.sql`，实现五类 action、USER/SYSTEM actor、initiatedBy、SUCCESS/FAILED、三选一真实 target、固定摘要和毫秒时间。
+  - [x] 增加 action/actor/outcome/target/summary CHECK、五个 RESTRICT FK、三组 action+target 唯一键及 action/initiatedBy 分页索引。
+  - [x] 更新全部最新 Flyway 版本和表数量断言，使用真实 MySQL 从 V1→V10 验证 V1～V9 checksum 不变，并用 `EXPLAIN` 检查查询索引。
+  - [x] 建立 `audit` 模块、白名单枚举、受限 Mapper 与类型安全写入 Service；写方法使用 `Propagation.MANDATORY` 加入现有事务，不暴露自由动作字符串或 update/delete 能力。
+  - [x] 首次 CSV 上传在 job/file/Outbox 同事务写 `CSV_UPLOAD_ACCEPTED`；重复文件仍只保留一条 accepted。
+  - [x] 所有首次进入 FAILED 的导入路径同事务写 `IMPORT_FAILED`；重复消费、终态短路和恢复不重复。
+  - [x] 对账 results/hits/tasks/job COMPLETED 同事务写 `RECONCILIATION_COMPLETED`，固定摘要计数与 job 字段一致。
+  - [x] 审核条件更新成功后同事务写 `REVIEW_CONFIRMED/REVIEW_IGNORED`；0 行更新、404/409、重复终态和失败方不写审计。
+  - [x] 新增 `GET /api/audit-logs`，复用 `PageResponse`，支持 actionCode/initiatedBy 筛选并按 `created_at DESC, id DESC` 排序；只允许 ADMIN。
+  - [x] 覆盖五类动作、非法数据库形状、FK/唯一键/RESTRICT、业务与审计双向回滚、重复消息、并发审核和敏感信息屏蔽测试。
+  - [x] 完成真实 JWT/HTTP/MySQL/RabbitMQ 验收，记录聚焦与完整测试数字，清理 audit-first 数据、队列、临时凭据和端口。
+  - [x] 执行敏感信息检查、范围审计和 `git diff --check`；实现完成后才更新 README 能力与本节验收结论。
 - **关键文件**：
   - `docs/design/week5-day5-audit-log-design.md`
   - `src/main/resources/db/migration/V10__create_audit_log_table.sql`
   - `src/main/java/com/finguard/core/audit/`
-  - `src/main/java/com/finguard/core/importjob/`
-  - `src/main/java/com/finguard/core/reconciliation/`
-  - `src/main/java/com/finguard/core/review/`
+  - `src/main/java/com/finguard/core/importjob/service/impl/ImportJobTransactionService.java`
+  - `src/main/java/com/finguard/core/reconciliation/service/impl/ReconciliationJobTransactionService.java`
+  - `src/main/java/com/finguard/core/review/service/impl/ReviewTaskServiceImpl.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
   - `src/test/java/com/finguard/core/audit/`
-- **验收**：五类关键动作各产生正确且唯一的安全审计记录；业务回滚不产生假成功日志；分页与权限稳定；完整回归通过且敏感信息检查无命中。
+  - `src/test/java/com/finguard/core/DatabaseBaselineIntegrationTest.java`
+  - `src/test/java/com/finguard/core/auth/security/RbacAuthorizationIntegrationTest.java`
+- **验收标准**：
+  - 五类关键动作各产生正确且唯一的 actor/initiatedBy/target/outcome/summary；重复文件、重复 MQ、ACK 丢失红投和重复审核不重复。
+  - 首次上传、导入失败、对账完成和审核决策均与审计同事务；审计失败时对应业务状态与副作用完整回滚，业务失败时不留下假成功审计。
+  - 两个并发审核仍为一个成功、一个 `409 REVIEW_VERSION_CONFLICT`，数据库只有成功方一条终态审计。
+  - `/api/audit-logs` 分页/筛选稳定；ADMIN 200、REVIEWER/无角色 403、匿名/无效 JWT 401，拒绝路径零写副作用。
+  - V10 的 CHECK、FK、UNIQUE、RESTRICT、索引和真实 `EXPLAIN` 证据完整；V1～V9 未修改。
+  - 响应与数据库摘要不包含密码、JWT、原始 CSV、文件名/hash、交易描述、完整审核 note、SQL、异常消息或堆栈。
+  - 聚焦、数据库基线、完整 `mvn clean test` 和真实 MySQL/RabbitMQ/JWT/HTTP 均为本日实跑；清理、范围审计和 `git diff --check` 通过。
+  - 变更中没有 Redis、统计、限流、新 MQ、通用 AOP 审计、历史回填或审计更新/删除接口。
+- **验收结论**：V10 已在真实 MySQL 8.4.10 应用，Flyway 最新版本为 10、业务表为 14 张，V1～V9 checksum 保持不变；五个 RESTRICT 外键、七个 CHECK、三组 action+target 唯一键和两个分页索引均已验证，`EXPLAIN` 分别命中 action 与 initiatedBy 索引。聚焦测试按阶段为 15/15、21/21、17/17、16/16、10/10；完整 `mvn clean test` 实跑 344/344，0 failures、0 errors、0 skipped，`BUILD SUCCESS`。真实应用健康为 `UP`，主导入 `SUCCESS`、错误文件 `FAILED`，重复上传/重复对账复用原任务；对账计数为 total=3、matched=1、unmatched=2；顺序审核完成 confirm/ignore，并发同版本请求稳定得到一个 200、一个 409，三个成功决策各只有一条审计。审计查询验证 ADMIN 200、REVIEWER 403、匿名 401、非法分页 400，actor/outcome/target 形状 0 异常；验收数据、8 个队列、临时凭据和 18080 端口均已清理。
+- **学习重点**：
+  - 必须掌握：append-only 审计、同事务一致性、actor 与 initiatedBy、固定安全摘要、数据库 CHECK/FK/UNIQUE/RESTRICT 和业务幂等分工。
+  - 边做边学：失败注入回滚、重复消息终态短路、受限 Mapper、稳定分页、真实 `EXPLAIN` 和 ADMIN 专属 RBAC。
+  - 留到 Day 6：Redis 统计缓存、提交后失效、固定窗口登录/上传限流与 fail-open。
+  - 本日不学不做：WORM/哈希链/数字签名、SIEM、事件溯源、通用 AOP、跨服务分布式事务和前端审计台。
+- **常见错误预防**：不要用 `REQUIRES_NEW` 让审计单独成功；不要在 catch 中保存假成功日志；不要忘记全行失败和重试耗尽路径；不要让 Controller 自由指定 action/actor/target；不要把异常、文件或审核 note 拼进 summary；不要继承通用 Mapper 后声称不可修改；不要用 `INSERT IGNORE` 吞错；不要让 REVIEWER 被 `.anyRequest().authenticated()` 意外放行；不要修改 V1～V9 或预填测试数字。
+- **回滚**：设计阶段只回退本设计文档和任务清单；实现阶段的 Java、测试、权限和文档可按 Day 5 文件范围回退，Day 4 风险/审核能力必须继续工作。V10 一旦进入共享或需保留数据的数据库不得修改/删除，只能新增 V11+ 补偿迁移；不得删除现有业务数据或数据卷掩盖问题。
 - **提交建议**：`feat: add critical business audit logs`
 
 ### Week 5 Day 6：Redis 统计缓存、登录限流与上传限流

@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 5 Day 4 已完成：ADMIN/REVIEWER 可分页查询审核任务，REVIEWER 可携带期望版本确认或忽略；数据库条件更新保证并发请求只有一个成功，并稳定区分不存在、终态和版本冲突。完整 `mvn clean test` 为 326/326，真实 MySQL/RabbitMQ/JWT/HTTP 与双请求并发闭环已验证并清理。
+当前进度为 Week 5 Day 5 已完成：五类关键业务动作写入 V10 审计真源，上传、导入失败、对账完成和审核决策均与审计同事务提交或回滚；ADMIN 可按动作与发起人稳定分页查询。完整 `mvn clean test` 为 344/344，真实 MySQL/RabbitMQ/JWT/HTTP、幂等、失败与双请求并发闭环已验证并清理。
 
 ## 当前技术基线
 
@@ -61,7 +61,10 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - 对账 results、risk hits、review tasks 和 job `COMPLETED` 同事务提交，规则/风险/审核写入失败整体回滚，重复 MQ 和 ACK 丢失红投无重复副作用；
 - 审核任务详情与稳定分页，支持状态、来源、对账异常类型和风险规则筛选；ADMIN/REVIEWER 可查，只有 REVIEWER 可决策；
 - `PENDING → CONFIRMED/IGNORED` 使用 `id + PENDING + version` 原子条件更新，保存 JWT 审核人、审核时间和可选说明；并发失败、终态重复提交和不存在分别返回稳定 `409/409/404`；
-- 326 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、乐观锁并发和应用健康验收。
+- V10 `audit_logs` 以真实外键、CHECK、唯一键和稳定分页索引保护五类白名单事件；受限 Mapper 不开放审计更新或删除；
+- CSV 首次受理、导入失败、对账完成、审核确认和忽略使用固定安全摘要，并与对应业务事实同事务提交；重复文件、重复消息和失败的并发审核不重复记录；
+- `GET /api/audit-logs` 支持 `actionCode`、`initiatedBy` 和稳定分页，仅允许 `ADMIN` 查询；
+- 344 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、乐观锁并发和应用健康验收。
 
 ## 本地运行
 
@@ -203,6 +206,14 @@ PATCH  /api/review-tasks/{reviewTaskId}/decision
 
 审核只修改 `review_tasks`，不会改写原交易、对账结果或风险命中。两个请求携带同一版本并发决策时只有一个能完成条件更新，失败方返回 `409 REVIEW_VERSION_CONFLICT`；已经进入终态的任务返回 `409 INVALID_REVIEW_OPERATION`。
 
+### 审计日志
+
+```text
+GET    /api/audit-logs?page=1&size=20&actionCode=REVIEW_CONFIRMED&initiatedBy=1
+```
+
+审计查询仅允许 `ADMIN`，按 `created_at DESC, id DESC` 稳定分页。系统只记录 CSV 首次受理、导入失败、对账完成、审核确认和审核忽略；摘要由服务端固定模板生成，不包含 JWT、原始 CSV、文件名/hash、交易描述、完整审核说明、SQL、自由异常消息或堆栈。审计记录是应用层 append-only，不提供修改、删除或导出接口。
+
 错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
 
 ```json
@@ -218,7 +229,7 @@ PATCH  /api/review-tasks/{reviewTaskId}/decision
 
 ## 当前限制
 
-- 审核分页、详情、决策和乐观锁已完成，但尚未实现审核撤销/重开、批量审核或审计日志；
+- 审核分页、详情、决策、乐观锁和五类关键操作审计已完成，但尚未实现审核撤销/重开、批量审核或审计导出；
 - 导入和对账消费者采用单事务任务行锁，正常处理中间态不会独立提交，也不提供跨事务可见的处理租约；
 - DLQ 目前依赖运维排查，尚未提供失败任务的人工重跑、覆盖导入或管理接口；
 - 风险候选查询在 4,000 条合成数据上由 MySQL 优化器选择全表扫描；当时估算命中 15.89% 且数据量小，Day 3 未根据单次合成样本追加索引，留待 Week 6 用更真实数据规模压测后决定；

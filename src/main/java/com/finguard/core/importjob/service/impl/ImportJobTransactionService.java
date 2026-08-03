@@ -1,5 +1,6 @@
 package com.finguard.core.importjob.service.impl;
 
+import com.finguard.core.audit.service.AuditLogService;
 import com.finguard.core.importjob.entity.ImportJob;
 import com.finguard.core.importjob.entity.ImportJobFile;
 import com.finguard.core.importjob.entity.ImportRowError;
@@ -56,6 +57,7 @@ public class ImportJobTransactionService {
     private final TransactionMapper transactionMapper;
     private final CsvImportFileParser fileParser;
     private final CsvImportRowValidator rowValidator;
+    private final AuditLogService auditLogService;
     private final Clock businessClock;
 
     public ImportJobTransactionService(
@@ -66,6 +68,7 @@ public class ImportJobTransactionService {
             TransactionMapper transactionMapper,
             CsvImportFileParser fileParser,
             CsvImportRowValidator rowValidator,
+            AuditLogService auditLogService,
             Clock businessClock) {
         this.importJobMapper = importJobMapper;
         this.importJobFileMapper = importJobFileMapper;
@@ -74,6 +77,7 @@ public class ImportJobTransactionService {
         this.transactionMapper = transactionMapper;
         this.fileParser = fileParser;
         this.rowValidator = rowValidator;
+        this.auditLogService = auditLogService;
         this.businessClock = businessClock;
     }
 
@@ -131,6 +135,10 @@ public class ImportJobTransactionService {
                     "Import outbox event could not be created"
             );
         }
+        auditLogService.recordCsvUploadAccepted(
+                importJob.getId(),
+                createdBy
+        );
         return importJob;
     }
 
@@ -182,11 +190,16 @@ public class ImportJobTransactionService {
     public void processAndComplete(
             Long importJobId,
             PreparedImportFile preparedFile) {
+        ImportJob importJob = requireById(importJobId);
         ParsedImportFile parsedFile;
         try {
             parsedFile = fileParser.parse(preparedFile);
         } catch (ImportFileParseException exception) {
-            completeFileFailure(importJobId, exception);
+            completeFileFailure(
+                    importJobId,
+                    importJob.getCreatedBy(),
+                    exception
+            );
             return;
         }
 
@@ -225,6 +238,12 @@ public class ImportJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, importJobId);
+        if (status == ImportJobStatus.FAILED) {
+            auditLogService.recordImportFailed(
+                    importJobId,
+                    importJob.getCreatedBy()
+            );
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -241,6 +260,11 @@ public class ImportJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, importJobId);
+        ImportJob failed = requireById(importJobId);
+        auditLogService.recordImportFailed(
+                importJobId,
+                failed.getCreatedBy()
+        );
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -256,6 +280,11 @@ public class ImportJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         if (updated == 1) {
+            ImportJob failed = requireById(importJobId);
+            auditLogService.recordImportFailed(
+                    importJobId,
+                    failed.getCreatedBy()
+            );
             return true;
         }
         ImportJob current = importJobMapper.selectById(importJobId);
@@ -424,6 +453,7 @@ public class ImportJobTransactionService {
 
     private void completeFileFailure(
             Long importJobId,
+            Long initiatedBy,
             ImportFileParseException exception) {
         int updated = importJobMapper.completeProcessing(
                 importJobId,
@@ -437,6 +467,7 @@ public class ImportJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, importJobId);
+        auditLogService.recordImportFailed(importJobId, initiatedBy);
     }
 
     private ImportJobStatus terminalStatus(

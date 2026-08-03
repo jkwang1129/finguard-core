@@ -38,6 +38,15 @@ public class ImportJobTestFixture {
     public void clean() {
         jdbcTemplate.update(
                 """
+                DELETE al
+                FROM audit_logs al
+                INNER JOIN users u ON u.id = al.initiated_by
+                WHERE u.username LIKE ?
+                """,
+                USERNAME_PREFIX + "%"
+        );
+        jdbcTemplate.update(
+                """
                 DELETE t
                 FROM transactions t
                 INNER JOIN import_jobs ij ON ij.id = t.import_job_id

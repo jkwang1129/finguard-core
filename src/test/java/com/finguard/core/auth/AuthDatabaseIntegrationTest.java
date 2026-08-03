@@ -49,7 +49,7 @@ class AuthDatabaseIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("9");
+        assertThat(current.getVersion().getVersion()).isEqualTo("10");
 
         Integer authTableCount = jdbcTemplate.queryForObject(
                 """
