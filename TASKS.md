@@ -38,7 +38,7 @@
 | Week 5 Day 3 | 已完成 | 三条风险规则、V9 审核任务真源、任务生成与对账事务接入已完成真实验收 |
 | Week 5 Day 4 | 已完成 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵已完成真实验收 |
 | Week 5 Day 5 | 已完成 | V10 审计真源、五类白名单事件、同事务回滚、ADMIN 查询与真实安全验收完成 |
-| Week 5 Day 6 | 当前任务 | Redis 统计缓存、登录限流与上传限流待设计实施 |
+| Week 5 Day 6 | 已完成 | Redis 统计缓存、提交后失效、登录/上传固定窗口限流与故障降级已完成真实验收 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1598,28 +1598,95 @@
 
 ### Week 5 Day 6：Redis 统计缓存、登录限流与上传限流
 
-- **状态**：未开始
-- **业务目标**：使用一个 Redis 实例完成可解释的统计缓存和两类固定窗口限流，同时保证数据库仍是真源，Redis 故障不会破坏最终业务正确性。
-- **范围边界**：只实现一个统计聚合查询缓存、登录限流和 CSV 上传限流；不实现 Session、JWT 黑名单、分布式锁、通用缓存平台、热点 Key 自动发现、复杂滑动窗口或 Redis 作为唯一幂等真源。
+- **状态**：已完成
+- **业务目标**：使用一个 Redis 实例缓存可重建的全局统计快照，并为登录与 CSV 上传增加原子固定窗口限流；MySQL 继续是业务真源，Redis 故障不得破坏导入、对账、风险、审核、审计或幂等正确性。
+- **当前基线**：
+  - Week 5 Day 5 已在提交 `f58ca6e` 完成；当前最新 Flyway 为 V10，共 14 张业务表，风险、审核、乐观锁和五类审计均已落地。
+  - 进入本日时完整 `mvn clean test` 为 344/344；Day 6 完成后最终回归为 366/366。
+  - 进入本日时仓库没有 Redis 依赖、Compose 服务、连接配置、`statistics`/`ratelimit` 模块或 429 错误码；这些能力均在本日按下列边界实现。
+- **目标请求流**：
+
+  ```text
+  GET statistics
+    → Redis 固定 key
+    → hit：返回原快照
+    → miss/Redis 故障：MySQL COUNT/GROUP BY → 可用时缓存 60 秒
+
+  相关业务写事务成功提交
+    → AFTER_COMMIT 删除统计 key
+    → 删除失败只告警，TTL 最终纠正
+
+  登录 / ADMIN 上传
+    → Redis Lua 原子 INCR + 首次 PEXPIRE + PTTL
+    → 阈值内进入现有流程
+    → 超限返回 429 + Retry-After
+    → Redis 故障 fail-open
+  ```
+- **范围边界**：
+  - 只实现一个统计聚合接口、一个统计缓存 key、登录限流和 CSV 上传限流，以及必要的 Redis 基础设施、统一错误和测试。
+  - 不新增或修改 Flyway 迁移；实现完成后仍是 V10 和 14 张业务表。
+  - 不实现 Session、JWT 黑名单、验证码、账户锁定、分布式锁、Redisson、通用缓存平台、滑动窗口/令牌桶、网关限流、动态规则、前端或 Week 6 监控部署。
+  - 不缓存进行中的任务详情、原始 CSV、审计原文或任意用户输入；Redis 不参与数据库最终幂等、审核并发或审计唯一性。
+- **关键设计决定**：
+  - 使用 Spring Data Redis 与 Boot 管理的 Lettuce；Compose 固定实际验证过的 Redis 8.x Alpine patch，不使用 `latest`，密码和超时全部外置。
+  - 统计 key 为 `finguard:statistics:overview:v1`，显式 JSON DTO，TTL 60 秒；不使用 JDK 原生序列化或隐藏 key/故障边界的通用缓存注解。
+  - `GET /api/statistics/overview` 统计 import jobs、reconciliation jobs/results、risk hits 和 review tasks，允许 ADMIN/REVIEWER；generatedAt 表示 MySQL 快照生成时间，缓存命中时不变化。
+  - 业务事务内发布统计变化事件，`AFTER_COMMIT` 监听器执行幂等删除；回滚不删除，删除失败不回滚已提交业务。
+  - 登录 key 为 IP 摘要 + 规范化用户名摘要，默认 5 次/300 秒；失败保留计数，JWT 成功签发后清除当前 key，只使用实际 remote address，不信任未配置代理的转发头。
+  - 上传 key 为已验签 userId，默认 10 次/60 秒；必须先通过 ADMIN 授权，再在文件读取、哈希、解析和数据库访问前计数；匿名/REVIEWER 不消耗配额。
+  - Lua 原子执行 INCR、首次 PEXPIRE 和 PTTL；第 limit+1 次返回统一 `429 RATE_LIMIT_EXCEEDED`，`Retry-After` 至少 1 秒且响应不泄漏计数、key 或账户存在性。
+  - Redis 连接/命令故障时统计查 MySQL、限流 fail-open；配置错误、代码契约错误和数据库错误不能被 `catch (Exception)` 冒充 Redis 降级。
+- **执行顺序**：
+  1. 以 `docs/design/week5-day6-redis-cache-and-rate-limit-design.md` 锁定知识点、key、TTL、限流时机、失效事件、降级、文件和测试矩阵。
+  2. 加入 Redis 依赖、Compose 服务、外置密码、短超时和类型安全配置，验证真实连接、认证、TTL 与健康状态。
+  3. 实现显式 Redis JSON 组件和类路径 Lua 固定窗口算法，先用真实 Redis 测试原子计数、TTL、不续期和失败行为。
+  4. 实现统计 Mapper/DTO/Service/Controller/RBAC，覆盖 miss、hit、TTL、损坏缓存、Redis 故障和 DB 异常边界。
+  5. 在导入、对账、风险/审核生成与审核决策事务中发布变化事件，证明只在成功提交后失效，回滚和幂等短路不产生错误副作用。
+  6. 接入登录与上传限流，保持既有 401 防枚举语义、上传 401/403 顺序、文件幂等和数据库约束不变。
+  7. 完成聚焦测试、完整回归及真实 JWT/HTTP/MySQL/RabbitMQ/Redis 验收；停止/恢复 Redis 验证 fail-open 和恢复。
+  8. 清理业务数据、8 个队列、`finguard:*` 验收 key、临时凭据和端口；执行敏感信息检查、Day 7/Week 6 范围审计和 `git diff --check` 后再提交。
 - **任务**：
-  - [ ] 在 Docker Compose、配置示例和 Spring Boot 中加入 Redis，配置健康检查、超时、序列化、key 前缀与外置密码。
-  - [ ] 实现 `GET /api/statistics/overview`，聚合导入、对账、风险和审核状态；使用明确 TTL 缓存，数据库是缓存未命中和降级时的真源。
-  - [ ] 在相关业务提交后失效统计缓存；事务回滚不得提前删除或写入错误缓存，禁止缓存进行中的不稳定对象详情。
-  - [ ] 使用 Redis 原子操作或 Lua 实现登录和上传固定窗口限流，返回统一 `429`、错误码和 `Retry-After`。
-  - [ ] 登录限流 Key 不泄漏明文密码或敏感用户名；上传按已认证用户及契约维度限流，越权请求不得先消耗业务配额。
-  - [ ] 按 Day 1 契约实现 Redis 不可用时的缓存降级和限流策略，并证明不会产生重复上传、重复交易或绕过数据库唯一约束。
-  - [ ] 覆盖缓存命中/未命中/失效/TTL、并发限流、窗口恢复、`429`、Redis 重启与降级测试。
+  - [x] 新增 Day 6 任务安排文档，讲清业务目标、请求流、知识点、设计选择、文件计划、测试矩阵、验收和回滚；本项不代表运行时能力已实现。
+  - [x] 新增 `spring-boot-starter-data-redis`、固定版本 Redis Compose 服务、项目专属 volume、健康检查、外置密码和本地连接配置。
+  - [x] 新增 Redis/统计/限流 `@ConfigurationProperties`，校验 TTL、阈值、窗口和超时均为合法正值。
+  - [x] 实现受限 Redis 字符串/JSON 组件与固定 key 命名，确保没有 JDK 序列化、明文凭据或任意用户输入 key。
+  - [x] 实现统计 MySQL 聚合、不可变响应、缓存旁路、60 秒 TTL、损坏缓存恢复和 Redis 读写失败降级。
+  - [x] 实现 `GET /api/statistics/overview` 与 ADMIN/REVIEWER/匿名/无角色完整权限矩阵。
+  - [x] 在导入受理/终态、对账受理/终态、风险/审核生成和审核决策成功提交后失效统计 key；事务回滚不得失效。
+  - [x] 实现 Lua 固定窗口组件，覆盖首次 TTL、已有窗口不续期、并发原子计数、`PTTL=-1` 修复和 Retry-After 计算。
+  - [x] 实现登录 5 次/300 秒限流：DTO 校验后、密码验证前计数，失败保留、成功清除，key 和响应不泄漏账户信息。
+  - [x] 实现上传 10 次/60 秒限流：ADMIN 授权后、文件读取前计数，匿名/REVIEWER 不消耗配额，重复/无效文件消耗配额。
+  - [x] 新增 `RateLimitExceededException`、`RATE_LIMIT_EXCEEDED` 和统一 `429 + Retry-After`，拒绝请求无数据库/RabbitMQ副作用。
+  - [x] 覆盖缓存 miss/hit/TTL/提交后失效/回滚/损坏值、限流并发/窗口恢复/成功登录清除、RBAC 与 Redis 故障自动化测试。
+  - [x] 运行聚焦测试和完整 `mvn clean test`，使用真实 Redis/JWT/HTTP/MySQL/RabbitMQ 验收并记录实际数字；完成清理、敏感信息检查、范围审计和 `git diff --check`。
 - **关键文件**：
   - `docs/design/week5-day6-redis-cache-and-rate-limit-design.md`
+  - `TASKS.md`
   - `pom.xml`
   - `docker-compose.yml`
   - `.env.example`
   - `src/main/resources/application.yml`
+  - `src/main/resources/redis/fixed-window-rate-limit.lua`
+  - `src/main/java/com/finguard/core/redis/`
   - `src/main/java/com/finguard/core/statistics/`
   - `src/main/java/com/finguard/core/ratelimit/`
+  - `src/main/java/com/finguard/core/auth/controller/AuthController.java`
+  - `src/main/java/com/finguard/core/importjob/controller/ImportJobController.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/java/com/finguard/core/common/exception/ErrorCode.java`
+  - `src/main/java/com/finguard/core/common/exception/GlobalExceptionHandler.java`
   - `src/test/java/com/finguard/core/statistics/`
   - `src/test/java/com/finguard/core/ratelimit/`
-- **验收**：真实 Redis 可观察缓存命中、TTL 和业务提交后失效；登录/上传超过阈值返回 `429 + Retry-After`，窗口结束后恢复；暂停 Redis 时行为符合降级契约且 MySQL/RabbitMQ 业务正确性不受破坏；完整测试通过。
+- **验收标准**：
+  - Redis 认证、固定版本、健康检查、短超时、显式 JSON/数字序列化和外置配置均可由代码与真实容器验证，仓库不含真实凭据。
+  - 统计首次 miss 后缓存、第二次 hit 不重复查库、TTL 到期重建；业务成功提交后 key 删除，回滚不删除；Redis 故障时从 MySQL 返回正确结果。
+  - 登录第 6 次、上传第 11 次返回 `429 + Retry-After`，窗口后恢复；成功登录清除当前窗口，失败登录继续计数；匿名/REVIEWER 上传不消耗配额。
+  - Redis 暂停时登录/上传 fail-open，重复上传、MQ 红投和审核并发仍由 MySQL/RabbitMQ 既有不变量保护，无重复业务副作用。
+  - V1～V10 checksum 不变且无 V11；完整测试不少于历史 344 项，0 failures、0 errors、0 skipped；真实验收、数据/key/消息/端口清理、敏感信息检查、范围审计和 `git diff --check` 全部通过。
+- **验收结论**：Redis 8.2.8 Alpine、MySQL 8.4.10 与 RabbitMQ 4.3.4 均健康，Java 17 应用 `/actuator/health` 为 `UP`。专项测试 31/31、最终完整 `mvn clean test` 366/366，均为零失败、零错误、零跳过。真实 ADMIN/REVIEWER JWT 验证统计权限、60 秒 JSON 缓存、命中保持 `generatedAt`、导入提交后失效与 MySQL 重建；真实导入消息到达终态。登录第 6 次、上传第 11 次均返回 `429 + Retry-After`；暂停 Redis 后统计仍从 MySQL 返回 200，登录和授权语义保持，恢复后缓存重建。五条聚合 SQL 已在真实 MySQL 执行 `EXPLAIN`，未发现新增 V11/索引的依据。验收用户/任务、8 个队列、全部 `finguard:*` key、临时凭据和 18080 端口均已清理；Flyway 仍为 V10、业务表仍为 14 张。
+- **学习重点**：缓存旁路、TTL、最终一致性、`AFTER_COMMIT` 失效、Redis 字符串/JSON 序列化、Lua 原子性、固定窗口算法、摘要 key、`429/Retry-After`、fail-open 与可用性/安全取舍。
+- **常见错误预防**：不要让 Redis 成为业务真源；不要在事务提交前删缓存；不要用非原子的 INCR+EXPIRE；不要把用户名/密码/JWT/CSV 拼进 key；不要信任未配置代理的转发头；不要在授权前消耗上传配额；不要用全量异常捕获掩盖数据库或代码错误；不要预填测试数字或宣称未经测量的性能提升。
+- **回滚**：可按 Day 6 文件范围回退 Redis 依赖、容器、配置、统计/限流代码和测试，核心 MySQL/RabbitMQ 流程必须继续运行。不得修改/删除 V8～V10 或风险、审核、审计数据；只清理本项目明确命名且确认可重建的 `finguard:*` key 和 Redis volume，不删除 MySQL/RabbitMQ 数据卷。
 - **提交建议**：`feat: add redis statistics cache and rate limits`
 
 ### Week 5 Day 7：综合验收、清理与周复盘
@@ -1697,4 +1764,6 @@
 | Week 5 Day 1 风险、审核、Redis 与审计契约设计 | `71b432d` |
 | Week 5 Day 2 风险命中持久层与规则契约骨架 | `0cbb71a` |
 | Week 5 Day 3 三条风险规则与审核任务生成 | `5128247` |
-| Week 5 Day 4 审核接口与乐观锁并发控制 | 本次提交 |
+| Week 5 Day 4 审核接口与乐观锁并发控制 | `286391f` |
+| Week 5 Day 5 关键业务操作审计日志 | `f58ca6e` |
+| Week 5 Day 6 Redis 统计缓存与固定窗口限流 | 本次提交 |

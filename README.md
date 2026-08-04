@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 5 Day 5 已完成：五类关键业务动作写入 V10 审计真源，上传、导入失败、对账完成和审核决策均与审计同事务提交或回滚；ADMIN 可按动作与发起人稳定分页查询。完整 `mvn clean test` 为 344/344，真实 MySQL/RabbitMQ/JWT/HTTP、幂等、失败与双请求并发闭环已验证并清理。
+当前进度为 Week 5 Day 6 已完成：全局统计以 MySQL 为真源并使用 Redis 60 秒 Cache-Aside 快照，相关业务提交后失效；匿名登录与 ADMIN CSV 上传使用 Lua 原子固定窗口限流，Redis 故障时按契约降级。完整 `mvn clean test` 为 366/366，真实 MySQL/RabbitMQ/Redis/JWT/HTTP、缓存失效、429 和故障恢复闭环已验证并清理。
 
 ## 当前技术基线
 
@@ -18,6 +18,7 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - MyBatis-Plus 3.5.17
 - MySQL 8.4.10
 - RabbitMQ 4.3.4
+- Redis 8.2.8 / Spring Data Redis / Lettuce
 - Flyway
 - JUnit 5 / Spring Boot Test
 - Mockito / MockMvc
@@ -64,7 +65,10 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - V10 `audit_logs` 以真实外键、CHECK、唯一键和稳定分页索引保护五类白名单事件；受限 Mapper 不开放审计更新或删除；
 - CSV 首次受理、导入失败、对账完成、审核确认和忽略使用固定安全摘要，并与对应业务事实同事务提交；重复文件、重复消息和失败的并发审核不重复记录；
 - `GET /api/audit-logs` 支持 `actionCode`、`initiatedBy` 和稳定分页，仅允许 `ADMIN` 查询；
-- 344 个自动化测试，以及真实 MySQL、RabbitMQ、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、乐观锁并发和应用健康验收。
+- `GET /api/statistics/overview` 聚合导入、对账、风险与审核状态，以显式 JSON 缓存到固定 Redis key 60 秒；ADMIN/REVIEWER 可查，事务成功提交后失效，Redis 异常时回源 MySQL；
+- 登录按 remote address 摘要与规范化用户名摘要限制为 5 次/300 秒，成功签发 JWT 后清除当前窗口；CSV 上传按已验签 userId 限制为 10 次/60 秒；
+- 两类限流共用 Lua 原子 `INCR + PEXPIRE + PTTL`，超限统一返回 `429 RATE_LIMIT_EXCEEDED + Retry-After`，Redis 异常时 fail-open；
+- 366 个自动化测试，以及真实 MySQL、RabbitMQ、Redis、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、缓存失效、限流、乐观锁并发和应用健康验收。
 
 ## 本地运行
 
@@ -87,7 +91,7 @@ docker compose version
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中设置仅供本机使用的 MySQL 和 RabbitMQ 密码。`.env` 已被 Git 忽略，不要提交真实密码。
+然后在 `.env` 中设置仅供本机使用的 MySQL、RabbitMQ 和 Redis 密码。`.env` 已被 Git 忽略，不要提交真实密码。
 
 应用启动还需要一个 Base64 编码、解码后不少于 32 字节的 JWT 密钥。可以只在当前 PowerShell 会话中生成：
 
@@ -100,14 +104,14 @@ $env:JWT_SECRET_BASE64 = [Convert]::ToBase64String($jwtKeyBytes)
 
 不要把真实 JWT 密钥写入仓库、文档或命令输出。
 
-### 3. 启动 MySQL 和 RabbitMQ
+### 3. 启动 MySQL、RabbitMQ 和 Redis
 
 ```powershell
 docker compose up -d
 docker compose ps
 ```
 
-预期 `finguard-mysql` 最终显示为 `healthy`。
+预期 `finguard-mysql`、`finguard-rabbitmq` 和 `finguard-redis` 最终均显示为 `healthy`。
 
 ### 4. 运行测试
 
@@ -142,6 +146,8 @@ POST   /api/auth/login
 ```
 
 登录和健康检查允许匿名访问。其余账户、交易接口必须携带合法的 Bearer Token。
+
+连续失败登录按 remote address 与规范化用户名的摘要组合计数，默认第 6 次返回 `429 + Retry-After`；成功登录会清除当前组合的计数。Redis 故障时认证继续执行，但故障期间限流暂时失效。
 
 ### 账户
 
@@ -182,6 +188,8 @@ GET    /api/import-jobs/{importJobId}/errors?page=1&size=20
 
 上传接口使用 `multipart/form-data` 的 `file` 字段，只允许 `ADMIN`，文件最大 5 MiB。首次接收某组原始字节时原子保存 `PENDING` 任务、原始文件和 Outbox，返回 `202 + Location`；再次上传相同字节时返回已有任务的 `200`，且 `duplicateFile=true`。任务详情和错误分页允许 `ADMIN`、`REVIEWER` 查询。
 
+上传在 ADMIN 授权后、文件读取前按 JWT userId 计数，默认第 11 次返回 `429 + Retry-After`；缺失、重复或无效文件也会消耗额度，匿名和 REVIEWER 请求不会消耗 ADMIN 配额。
+
 ### 自动对账
 
 ```text
@@ -214,6 +222,14 @@ GET    /api/audit-logs?page=1&size=20&actionCode=REVIEW_CONFIRMED&initiatedBy=1
 
 审计查询仅允许 `ADMIN`，按 `created_at DESC, id DESC` 稳定分页。系统只记录 CSV 首次受理、导入失败、对账完成、审核确认和审核忽略；摘要由服务端固定模板生成，不包含 JWT、原始 CSV、文件名/hash、交易描述、完整审核说明、SQL、自由异常消息或堆栈。审计记录是应用层 append-only，不提供修改、删除或导出接口。
 
+### 统计总览
+
+```text
+GET    /api/statistics/overview
+```
+
+统计总览允许 `ADMIN`、`REVIEWER` 查询，返回导入任务、对账任务/结果、风险命中和审核任务的分组计数及 `generatedAt`。MySQL 是统计真源；Redis 只保存固定 key 的 60 秒可重建 JSON 快照，缓存命中时 `generatedAt` 不变，相关业务成功提交后删除快照。Redis 不可用时接口直接回源 MySQL。
+
 错误响应统一包含 `timestamp`、`status`、`code`、`message`、`path` 和 `fieldErrors`。例如：
 
 ```json
@@ -233,7 +249,7 @@ GET    /api/audit-logs?page=1&size=20&actionCode=REVIEW_CONFIRMED&initiatedBy=1
 - 导入和对账消费者采用单事务任务行锁，正常处理中间态不会独立提交，也不提供跨事务可见的处理租约；
 - DLQ 目前依赖运维排查，尚未提供失败任务的人工重跑、覆盖导入或管理接口；
 - 风险候选查询在 4,000 条合成数据上由 MySQL 优化器选择全表扫描；当时估算命中 15.89% 且数据量小，Day 3 未根据单次合成样本追加索引，留待 Week 6 用更真实数据规模压测后决定；
-- 不提供复杂模糊匹配、金额容差或人工确认；Redis 尚未引入。
+- 不提供复杂模糊匹配、金额容差或人工确认；Redis 仅用于一个全局统计快照和两类单实例固定窗口限流，不提供强一致缓存、分布式全局配额、账户锁定或动态规则。
 
 ## 当前范围
 

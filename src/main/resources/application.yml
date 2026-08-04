@@ -16,6 +16,14 @@ spring:
     connection-timeout: 5s
     publisher-confirm-type: correlated
     publisher-returns: true
+  data:
+    redis:
+      host: "${REDIS_HOST:127.0.0.1}"
+      port: "${REDIS_PORT:6379}"
+      password: "${REDIS_PASSWORD}"
+      connect-timeout: "${FINGUARD_REDIS_CONNECT_TIMEOUT:1s}"
+      timeout: "${FINGUARD_REDIS_COMMAND_TIMEOUT:1s}"
+      client-type: lettuce
   servlet:
     multipart:
       max-file-size: 5MB
@@ -23,6 +31,16 @@ spring:
       file-size-threshold: 5MB
 
 finguard:
+  redis:
+    statistics:
+      cache-ttl: "${FINGUARD_STATISTICS_CACHE_TTL:60s}"
+    rate-limit:
+      login:
+        limit: "${FINGUARD_RATE_LIMIT_LOGIN_LIMIT:5}"
+        window: "${FINGUARD_RATE_LIMIT_LOGIN_WINDOW:300s}"
+      upload:
+        limit: "${FINGUARD_RATE_LIMIT_UPLOAD_LIMIT:10}"
+        window: "${FINGUARD_RATE_LIMIT_UPLOAD_WINDOW:60s}"
   risk:
     large-amount:
       enabled: "${FINGUARD_RISK_LARGE_AMOUNT_ENABLED:true}"

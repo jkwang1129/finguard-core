@@ -24,6 +24,7 @@ import com.finguard.core.messaging.outbox.entity.OutboxEvent;
 import com.finguard.core.messaging.outbox.mapper.OutboxEventMapper;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
 import com.finguard.core.messaging.outbox.model.OutboxStatus;
+import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.mapper.TransactionMapper;
 import org.springframework.dao.DuplicateKeyException;
@@ -58,6 +59,7 @@ public class ImportJobTransactionService {
     private final CsvImportFileParser fileParser;
     private final CsvImportRowValidator rowValidator;
     private final AuditLogService auditLogService;
+    private final StatisticsChangePublisher statisticsChangePublisher;
     private final Clock businessClock;
 
     public ImportJobTransactionService(
@@ -69,6 +71,7 @@ public class ImportJobTransactionService {
             CsvImportFileParser fileParser,
             CsvImportRowValidator rowValidator,
             AuditLogService auditLogService,
+            StatisticsChangePublisher statisticsChangePublisher,
             Clock businessClock) {
         this.importJobMapper = importJobMapper;
         this.importJobFileMapper = importJobFileMapper;
@@ -78,6 +81,7 @@ public class ImportJobTransactionService {
         this.fileParser = fileParser;
         this.rowValidator = rowValidator;
         this.auditLogService = auditLogService;
+        this.statisticsChangePublisher = statisticsChangePublisher;
         this.businessClock = businessClock;
     }
 
@@ -139,6 +143,7 @@ public class ImportJobTransactionService {
                 importJob.getId(),
                 createdBy
         );
+        statisticsChangePublisher.publish();
         return importJob;
     }
 
@@ -244,6 +249,7 @@ public class ImportJobTransactionService {
                     importJob.getCreatedBy()
             );
         }
+        statisticsChangePublisher.publish();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -265,6 +271,7 @@ public class ImportJobTransactionService {
                 importJobId,
                 failed.getCreatedBy()
         );
+        statisticsChangePublisher.publish();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -285,6 +292,7 @@ public class ImportJobTransactionService {
                     importJobId,
                     failed.getCreatedBy()
             );
+            statisticsChangePublisher.publish();
             return true;
         }
         ImportJob current = importJobMapper.selectById(importJobId);
@@ -468,6 +476,7 @@ public class ImportJobTransactionService {
         );
         requireSingleStateUpdate(updated, importJobId);
         auditLogService.recordImportFailed(importJobId, initiatedBy);
+        statisticsChangePublisher.publish();
     }
 
     private ImportJobStatus terminalStatus(

@@ -10,6 +10,7 @@ import com.finguard.core.importjob.exception.InvalidImportFileRequestException;
 import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
 import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
 import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
+import com.finguard.core.ratelimit.exception.RateLimitExceededException;
 import com.finguard.core.review.exception.InvalidReviewOperationException;
 import com.finguard.core.review.exception.InvalidReviewRequestException;
 import com.finguard.core.review.exception.ReviewTaskNotFoundException;
@@ -24,6 +25,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -56,6 +58,27 @@ public class GlobalExceptionHandler {
                 request,
                 List.of()
         );
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(
+            RateLimitExceededException exception,
+            HttpServletRequest request) {
+        ApiErrorResponse response = new ApiErrorResponse(
+                Instant.now(),
+                HttpStatus.TOO_MANY_REQUESTS.value(),
+                ErrorCode.RATE_LIMIT_EXCEEDED,
+                RateLimitExceededException.MESSAGE,
+                request.getRequestURI(),
+                List.of()
+        );
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(
+                        HttpHeaders.RETRY_AFTER,
+                        Long.toString(exception.getRetryAfterSeconds())
+                )
+                .body(response);
     }
 
     @ExceptionHandler(AccountNotFoundException.class)

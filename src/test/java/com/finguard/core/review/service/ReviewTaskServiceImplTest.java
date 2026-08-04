@@ -17,6 +17,7 @@ import com.finguard.core.review.model.ReviewTaskStatus;
 import com.finguard.core.review.model.ReviewTaskView;
 import com.finguard.core.review.service.impl.ReviewTaskServiceImpl;
 import com.finguard.core.risk.model.RiskRuleCode;
+import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,6 +50,8 @@ class ReviewTaskServiceImplTest {
     private ReviewTaskMapper reviewTaskMapper;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private StatisticsChangePublisher statisticsChangePublisher;
 
     private ReviewTaskServiceImpl service;
 
@@ -57,6 +60,7 @@ class ReviewTaskServiceImplTest {
         service = new ReviewTaskServiceImpl(
                 reviewTaskMapper,
                 auditLogService,
+                statisticsChangePublisher,
                 FIXED_CLOCK
         );
     }
@@ -178,6 +182,7 @@ class ReviewTaskServiceImplTest {
                 7L,
                 ReviewDecision.CONFIRMED
         );
+        verify(statisticsChangePublisher).publish();
     }
 
     @Test

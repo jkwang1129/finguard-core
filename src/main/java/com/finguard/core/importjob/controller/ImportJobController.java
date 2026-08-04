@@ -7,6 +7,7 @@ import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
 import com.finguard.core.importjob.service.ImportJobService;
 import com.finguard.core.importjob.vo.ImportJobResponse;
 import com.finguard.core.importjob.vo.ImportRowErrorResponse;
+import com.finguard.core.ratelimit.service.UploadRateLimitGuard;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpHeaders;
@@ -34,9 +35,13 @@ import java.net.URI;
 public class ImportJobController {
 
     private final ImportJobService importJobService;
+    private final UploadRateLimitGuard uploadRateLimitGuard;
 
-    public ImportJobController(ImportJobService importJobService) {
+    public ImportJobController(
+            ImportJobService importJobService,
+            UploadRateLimitGuard uploadRateLimitGuard) {
         this.importJobService = importJobService;
+        this.uploadRateLimitGuard = uploadRateLimitGuard;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -44,6 +49,8 @@ public class ImportJobController {
             @RequestPart(value = "file", required = false)
             MultipartFile file,
             @AuthenticationPrincipal Jwt jwt) throws IOException {
+        Long userId = authenticatedUserId(jwt);
+        uploadRateLimitGuard.check(userId);
         if (file == null) {
             throw new InvalidImportFileRequestException(
                     ImportFileRequestErrorCode.MISSING_FILE,
@@ -53,7 +60,7 @@ public class ImportJobController {
         ImportJobResponse response = importJobService.upload(
                 safeFileName(file.getOriginalFilename()),
                 file.getBytes(),
-                authenticatedUserId(jwt)
+                userId
         );
         if (response.duplicateFile()) {
             return ResponseEntity.ok(response);

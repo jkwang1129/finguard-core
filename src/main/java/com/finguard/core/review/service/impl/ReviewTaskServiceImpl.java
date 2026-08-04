@@ -18,6 +18,7 @@ import com.finguard.core.review.model.ReviewTaskStatus;
 import com.finguard.core.review.model.ReviewTaskView;
 import com.finguard.core.review.service.ReviewTaskService;
 import com.finguard.core.review.vo.ReviewTaskResponse;
+import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,14 +35,17 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
 
     private final ReviewTaskMapper reviewTaskMapper;
     private final AuditLogService auditLogService;
+    private final StatisticsChangePublisher statisticsChangePublisher;
     private final Clock businessClock;
 
     public ReviewTaskServiceImpl(
             ReviewTaskMapper reviewTaskMapper,
             AuditLogService auditLogService,
+            StatisticsChangePublisher statisticsChangePublisher,
             Clock businessClock) {
         this.reviewTaskMapper = reviewTaskMapper;
         this.auditLogService = auditLogService;
+        this.statisticsChangePublisher = statisticsChangePublisher;
         this.businessClock = businessClock;
     }
 
@@ -132,6 +136,7 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
                 reviewerId,
                 request.decision()
         );
+        statisticsChangePublisher.publish();
         return toResponse(requireView(reviewTaskId));
     }
 

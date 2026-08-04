@@ -5,6 +5,7 @@ import com.finguard.core.auth.exception.InvalidCredentialsException;
 import com.finguard.core.auth.service.AuthService;
 import com.finguard.core.auth.vo.LoginResponse;
 import com.finguard.core.common.exception.GlobalExceptionHandler;
+import com.finguard.core.ratelimit.service.LoginRateLimitGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -23,17 +24,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerTest {
 
     private AuthService authService;
+    private LoginRateLimitGuard loginRateLimitGuard;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         authService = mock(AuthService.class);
+        loginRateLimitGuard = mock(LoginRateLimitGuard.class);
         LocalValidatorFactoryBean validator =
                 new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new AuthController(authService))
+                .standaloneSetup(new AuthController(
+                        authService,
+                        loginRateLimitGuard
+                ))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();

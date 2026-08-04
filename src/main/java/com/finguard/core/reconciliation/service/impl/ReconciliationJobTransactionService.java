@@ -25,6 +25,7 @@ import com.finguard.core.reconciliation.service.ReconciliationMatcher;
 import com.finguard.core.review.service.ReviewTaskGenerator;
 import com.finguard.core.risk.entity.RiskHit;
 import com.finguard.core.risk.service.RiskEvaluationService;
+import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.mapper.TransactionMapper;
 import com.finguard.core.transaction.model.TransactionBusinessKey;
@@ -61,6 +62,7 @@ public class ReconciliationJobTransactionService {
     private final RiskEvaluationService riskEvaluationService;
     private final ReviewTaskGenerator reviewTaskGenerator;
     private final AuditLogService auditLogService;
+    private final StatisticsChangePublisher statisticsChangePublisher;
     private final Clock businessClock;
 
     public ReconciliationJobTransactionService(
@@ -73,6 +75,7 @@ public class ReconciliationJobTransactionService {
             RiskEvaluationService riskEvaluationService,
             ReviewTaskGenerator reviewTaskGenerator,
             AuditLogService auditLogService,
+            StatisticsChangePublisher statisticsChangePublisher,
             Clock businessClock) {
         this.reconciliationJobMapper = reconciliationJobMapper;
         this.outboxEventMapper = outboxEventMapper;
@@ -83,6 +86,7 @@ public class ReconciliationJobTransactionService {
         this.riskEvaluationService = riskEvaluationService;
         this.reviewTaskGenerator = reviewTaskGenerator;
         this.auditLogService = auditLogService;
+        this.statisticsChangePublisher = statisticsChangePublisher;
         this.businessClock = businessClock;
     }
 
@@ -130,6 +134,7 @@ public class ReconciliationJobTransactionService {
                     "Reconciliation outbox event could not be created"
             );
         }
+        statisticsChangePublisher.publish();
         return job;
     }
 
@@ -245,6 +250,7 @@ public class ReconciliationJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         requireSingleStateUpdate(updated, reconciliationJobId);
+        statisticsChangePublisher.publish();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -434,6 +440,7 @@ public class ReconciliationJobTransactionService {
                         suspicious
                 )
         );
+        statisticsChangePublisher.publish();
     }
 
     private int count(
@@ -494,6 +501,7 @@ public class ReconciliationJobTransactionService {
                 LocalDateTime.now(businessClock)
         );
         if (updated == 1) {
+            statisticsChangePublisher.publish();
             return true;
         }
         ReconciliationJob current = reconciliationJobMapper.selectById(

@@ -58,7 +58,8 @@ public class SecurityConfiguration {
                                 "/api/reconciliation-jobs/*",
                                 "/api/reconciliation-jobs/*/results",
                                 "/api/review-tasks",
-                                "/api/review-tasks/*"
+                                "/api/review-tasks/*",
+                                "/api/statistics/overview"
                         ).hasAnyRole(
                                 RoleCode.ADMIN.name(),
                                 RoleCode.REVIEWER.name()
