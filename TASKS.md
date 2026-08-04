@@ -39,6 +39,7 @@
 | Week 5 Day 4 | 已完成 | 审核查询/决策接口、条件更新乐观锁、并发冲突和权限矩阵已完成真实验收 |
 | Week 5 Day 5 | 已完成 | V10 审计真源、五类白名单事件、同事务回滚、ADMIN 查询与真实安全验收完成 |
 | Week 5 Day 6 | 已完成 | Redis 统计缓存、提交后失效、登录/上传固定窗口限流与故障降级已完成真实验收 |
+| Week 5 Day 7 | 已完成 | Week 5 综合验收、并发/幂等/故障证据、清理和周复盘完成；完整回归 366/366 |
 | Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
 
 ## 3. 阶段 0：工程基线
@@ -1691,19 +1692,19 @@
 
 ### Week 5 Day 7：综合验收、清理与周复盘
 
-- **状态**：未开始
+- **状态**：已完成
 - **业务目标**：从可重建环境证明 Week 5 的风险识别、异常审核、并发控制、审计、缓存和限流形成完整且可解释的闭环，并生成面试可复核证据。
 - **范围边界**：只验收 Week 5 已实现能力并修复真实缺陷；不新增 Week 6 的 Docker 镜像、CI/CD、Linux 部署、Micrometer、Prometheus/Grafana、压测或安全报告功能。
 - **任务**：
-  - [ ] 新增 `docs/review/week5-review.md`，按 Day 记录设计承诺、实际实现、提交、偏差、限制和 Week 6 边界。
-  - [ ] 从确认可清理的环境验证 MySQL、RabbitMQ、Redis 健康，Flyway 与 Redis key/TTL/限流配置可自动重建。
-  - [ ] 运行风险、审核、审计、Redis、认证、导入、对账聚焦测试和完整 `mvn clean test`，记录实际数字。
-  - [ ] 使用真实 ADMIN/REVIEWER JWT + HTTP 跑通上传、异步导入、异步对账、风险命中、审核查询、确认/忽略和审计查询。
-  - [ ] 并发提交同一审核任务，验证一个成功、一个稳定 `409`，最终只有一个决策和一条对应审计记录。
-  - [ ] 验证统计缓存命中与失效、登录/上传 `429` 和窗口恢复；暂停 Redis 验证降级，不通过手工改库伪造成功。
-  - [ ] 复核重复 MQ、重复风险评估、重复审核、Outbox 重试和 Redis 故障均不会产生重复业务副作用。
-  - [ ] 清理验收数据、Redis key、RabbitMQ 消息、临时凭据、进程和端口；更新 README、TASKS 和 Git 里程碑索引。
-  - [ ] 执行范围审计、敏感信息检查、`git diff --check` 和提交前复核。
+  - [x] 新增 `docs/review/week5-review.md`，按 Day 记录设计承诺、实际实现、提交、偏差、限制和 Week 6 边界。
+  - [x] 从确认可清理的环境验证 MySQL、RabbitMQ、Redis 健康，Flyway 与 Redis key/TTL/限流配置可自动重建。
+  - [x] 运行风险、审核、审计、Redis、认证、导入、对账聚焦测试和完整 `mvn clean test`，记录实际数字。
+  - [x] 使用真实 ADMIN/REVIEWER JWT + HTTP 跑通上传、异步导入、异步对账、风险命中、审核查询、确认和审计查询。
+  - [x] 并发提交同一审核任务，验证一个成功、一个稳定 `409`，最终只有一个决策和一条对应审计记录。
+  - [x] 验证统计缓存命中与失效、登录/上传 `429` 和窗口恢复；暂停 Redis 验证降级，没有通过手工改库伪造成功。
+  - [x] 复核重复 MQ、重复风险评估、重复审核、Outbox 重试和 Redis 故障均不会产生重复业务副作用。
+  - [x] 清理验收数据、Redis key、RabbitMQ 消息、临时凭据、进程和端口；更新 README、TASKS 和 Git 里程碑索引。
+  - [x] 执行范围审计、敏感信息检查、`git diff --check` 和提交前复核。
 - **关键文件**：
   - `TASKS.md`
   - `README.md`
@@ -1713,7 +1714,7 @@
   - `src/test/java/com/finguard/core/audit/`
   - `src/test/java/com/finguard/core/statistics/`
   - `src/test/java/com/finguard/core/ratelimit/`
-- **验收**：三类风险规则、异常审核、乐观锁、五类审计、统计缓存和两类限流均有自动化与真实 HTTP/MySQL/Redis/RabbitMQ 证据；完整回归零失败/错误/跳过；数据、消息、缓存、凭据和端口清理完成。
+- **验收**：聚焦测试 108/108，完整 `mvn clean test` 为 366/366，失败/错误/跳过均为 0；三类风险规则、异常审核、乐观锁、五类审计、统计缓存和两类限流均有自动化与真实 HTTP/MySQL/Redis/RabbitMQ 证据；数据、消息、缓存、凭据和端口清理完成。
 - **提交建议**：`docs: complete week 5 acceptance review`
 
 ## 8. 后续路线
@@ -1766,4 +1767,5 @@
 | Week 5 Day 3 三条风险规则与审核任务生成 | `5128247` |
 | Week 5 Day 4 审核接口与乐观锁并发控制 | `286391f` |
 | Week 5 Day 5 关键业务操作审计日志 | `f58ca6e` |
-| Week 5 Day 6 Redis 统计缓存与固定窗口限流 | 本次提交 |
+| Week 5 Day 6 Redis 统计缓存与固定窗口限流 | `413d858` |
+| Week 5 Day 7 综合验收与周复盘 | 本次提交 |

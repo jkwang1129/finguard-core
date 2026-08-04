@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 5 Day 6 已完成：全局统计以 MySQL 为真源并使用 Redis 60 秒 Cache-Aside 快照，相关业务提交后失效；匿名登录与 ADMIN CSV 上传使用 Lua 原子固定窗口限流，Redis 故障时按契约降级。完整 `mvn clean test` 为 366/366，真实 MySQL/RabbitMQ/Redis/JWT/HTTP、缓存失效、429 和故障恢复闭环已验证并清理。
+当前进度为 Week 5 Day 7 已完成：风险、审核、乐观锁、五类审计、Redis 统计缓存和登录/上传限流已完成综合验收与周复盘。完整 `mvn clean test` 为 366/366，真实 MySQL/RabbitMQ/Redis/JWT/HTTP、并发 409、缓存失效、429、Redis 故障恢复和数据清理均已验证。
 
 ## 当前技术基线
 
