@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+.env
+target
+docs
+scripts
+
+*.iml
+*.log
+.DS_Store
+Thumbs.db
+
+PROJECT_BRIEF.md
+README.md
+TASKS.md

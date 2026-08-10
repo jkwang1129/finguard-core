@@ -4,7 +4,7 @@ spring:
   config:
     import: "optional:file:.env[.properties]"
   datasource:
-    url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3306}/${MYSQL_DATABASE:finguard}?sslMode=DISABLED&allowPublicKeyRetrieval=true&connectionTimeZone=Asia/Shanghai"
+    url: "jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:finguard}?sslMode=DISABLED&allowPublicKeyRetrieval=true&connectionTimeZone=Asia/Shanghai"
     username: "${MYSQL_USER:finguard}"
     password: "${MYSQL_PASSWORD}"
   rabbitmq:

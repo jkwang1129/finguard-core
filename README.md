@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 6 Day 1 已完成：生产化边界与 Day 2～Day 7 职责已锁定，Springdoc/OpenAPI、Swagger UI 和 JWT Bearer 演示基线已经通过安全测试与真实 HTTP 验收。完整 `mvn clean test` 为 370/370；文档匿名访问、ADMIN/REVIEWER JWT、业务接口 `401/403` 和资源清理均已验证。
+当前进度为 Week 6 Day 2 本地交付已完成、GitHub 托管验证待远端：Java 17 非 root 应用镜像、四服务 Compose、运行时配置注入和 CI workflow 已实现。本地 `mvn clean package` 为 370/370；空卷环境的 Flyway V1～V10、四服务健康、OpenAPI、JWT/RBAC、应用重启和资源清理均已验证。仓库尚无 Git remote，因此不能把 GitHub-hosted Actions 标记为已验证。
 
 ## 当前技术基线
 
@@ -92,7 +92,7 @@ docker compose version
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中设置仅供本机使用的 MySQL、RabbitMQ 和 Redis 密码。`.env` 已被 Git 忽略，不要提交真实密码。
+然后在 `.env` 中设置仅供本机使用的 MySQL、RabbitMQ 和 Redis 密码。`.env` 已被 Git 忽略，不要提交真实密码。示例中的 `replace-with-*` 只能作为提示，不能直接用于真实环境。
 
 应用启动还需要一个 Base64 编码、解码后不少于 32 字节的 JWT 密钥。可以只在当前 PowerShell 会话中生成：
 
@@ -105,26 +105,66 @@ $env:JWT_SECRET_BASE64 = [Convert]::ToBase64String($jwtKeyBytes)
 
 不要把真实 JWT 密钥写入仓库、文档或命令输出。
 
-### 3. 启动 MySQL、RabbitMQ 和 Redis
+### 3. 选择启动方式
+
+#### 方式 A：宿主机运行应用
+
+只启动三个依赖：
 
 ```powershell
-docker compose up -d
+docker compose up -d --wait mysql rabbitmq redis
 docker compose ps
 ```
 
 预期 `finguard-mysql`、`finguard-rabbitmq` 和 `finguard-redis` 最终均显示为 `healthy`。
 
-### 4. 运行测试
+运行完整测试和打包：
 
 ```powershell
-mvn clean test
+mvn clean package
 ```
 
-### 5. 启动应用
+启动应用：
 
 ```powershell
 mvn spring-boot:run
 ```
+
+宿主机模式下，MySQL、RabbitMQ 和 Redis 默认连接 `127.0.0.1` 的映射端口。
+
+#### 方式 B：完整 Compose
+
+先确认当前 PowerShell 中已经设置 `JWT_SECRET_BASE64`，然后构建并启动应用与三个依赖：
+
+```powershell
+docker compose up -d --build --wait
+docker compose ps
+```
+
+预期 `app`、`mysql`、`rabbitmq` 和 `redis` 四个服务都显示为 `healthy`。应用容器通过 Compose 服务名连接依赖，默认只在本机 `127.0.0.1:8080` 暴露 HTTP。
+
+单独构建应用镜像：
+
+```powershell
+docker compose build app
+```
+
+查看应用日志或重启应用：
+
+```powershell
+docker compose logs --tail=200 app
+docker compose restart app
+```
+
+停止容器但保留 MySQL、RabbitMQ 和 Redis 数据卷：
+
+```powershell
+docker compose down
+```
+
+`docker compose down -v` 会删除三个命名数据卷及其中数据，不属于日常停止操作；只有确认数据可丢弃时才能执行。
+
+### 4. 验证应用
 
 访问健康检查：
 
@@ -146,6 +186,18 @@ GET http://localhost:8080/swagger-ui/index.html
 ```
 
 Swagger UI 可以匿名打开；先调用登录接口取得 JWT，再使用右上角 `Authorize` 配置 Bearer Token。文档端点公开不代表业务端点公开，实际读写权限仍由 Spring Security 的 ADMIN/REVIEWER RBAC 控制。
+
+## 持续集成
+
+`.github/workflows/ci.yml` 在 `push`、`pull_request` 和手动触发时执行：
+
+1. 配置 Temurin Java 17 与 Maven 缓存；
+2. 启动真实 MySQL、RabbitMQ 和 Redis，并等待健康；
+3. 运行一次完整 `mvn clean package`；
+4. 构建应用 Docker 镜像；
+5. 检查镜像使用非 root 用户、Java 17 且不包含 Maven/源码。
+
+该 workflow 只负责 CI 验证，不推送镜像、不部署服务器，也不使用生产凭据。
 
 ## 当前接口
 

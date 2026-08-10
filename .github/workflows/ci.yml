@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "ci-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  test-package-image:
+    name: Test, package, and build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      MYSQL_ROOT_PASSWORD: finguard-ci-root-password
+      MYSQL_DATABASE: finguard
+      MYSQL_USER: finguard
+      MYSQL_PASSWORD: finguard-ci-app-password
+      MYSQL_PORT: "3306"
+      RABBITMQ_USERNAME: finguard
+      RABBITMQ_PASSWORD: finguard-ci-rabbit-password
+      RABBITMQ_VIRTUAL_HOST: /
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_MANAGEMENT_PORT: "15672"
+      REDIS_PASSWORD: finguard-ci-redis-password
+      REDIS_PORT: "6379"
+      JWT_SECRET_BASE64: ZmluZ3VhcmQtZGF5My10ZXN0LW9ubHktc2VjcmV0LWtleQ==
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17 and Maven cache
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Start test dependencies
+        run: docker compose up -d --wait --wait-timeout 120 mysql rabbitmq redis
+
+      - name: Test and package
+        run: mvn -B -ntp clean package
+
+      - name: Build application image
+        run: docker build --tag "finguard-core:${GITHUB_SHA}" .
+
+      - name: Inspect application image
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' "finguard-core:${GITHUB_SHA}")" = "finguard"
+          docker run --rm --entrypoint java "finguard-core:${GITHUB_SHA}" -version 2>&1 | grep '17\.'
+          docker run --rm --entrypoint sh "finguard-core:${GITHUB_SHA}" -c 'test ! -e /opt/finguard/pom.xml && ! command -v mvn'
+
+      - name: Show dependency diagnostics
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=100 mysql rabbitmq redis
+
+      - name: Stop test dependencies
+        if: always()
+        run: docker compose down --remove-orphans

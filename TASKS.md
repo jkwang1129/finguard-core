@@ -41,6 +41,7 @@
 | Week 5 Day 6 | 已完成 | Redis 统计缓存、提交后失效、登录/上传固定窗口限流与故障降级已完成真实验收 |
 | Week 5 Day 7 | 已完成 | Week 5 综合验收、并发/幂等/故障证据、清理和周复盘完成；完整回归 366/366 |
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
+| Week 6 Day 2 | 进行中 | 本地镜像、四服务 Compose、workflow 与真实空卷验收完成；GitHub-hosted run 等待远端仓库 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1779,6 +1780,79 @@
 - **回滚**：移除 Springdoc 依赖、OpenAPI 配置、Controller 文档注解、文档白名单和对应测试；不得修改 V1～V10、业务数据或 Week 1～Week 5 的 JWT/RBAC 与业务语义。
 - **提交建议**：`feat: add OpenAPI documentation and lock week 6 contract`
 
+### Week 6 Day 2：应用容器化、完整 Compose 与 GitHub Actions
+
+- **状态**：进行中（本地交付与验收完成；GitHub-hosted run 等待远端仓库）
+- **业务目标**：把当前只能由宿主机 Maven 启动的 FinGuard Core 打包为可重复构建、最小运行、非 root 执行的应用镜像；让应用、MySQL、RabbitMQ、Redis 能通过一条 Compose 命令形成健康闭环；再由 GitHub Actions 在干净环境中自动完成编译、测试、打包和镜像构建，尽早发现“本机能跑、换环境失败”的工程问题。
+- **当前基线**：
+  - Week 6 Day 1 已在提交 `6ca94b8` 完成，历史完整回归为 370/370；这是进入 Day 2 的历史证据，本日必须重新实跑并记录新结果。
+  - 当前 `docker-compose.yml` 只有 MySQL 8.4.10、RabbitMQ 4.3.4 和 Redis 8.2.8，三个依赖当前均为 healthy；仓库没有 `Dockerfile`、`.dockerignore`、Compose 应用服务或 `.github/workflows`。
+  - 当前数据源默认固定连接 `127.0.0.1`，RabbitMQ/Redis 已支持 host 环境变量；应用进入 Compose 网络后必须通过服务名访问依赖，同时保持宿主机 Maven 启动方式可用。
+  - Flyway 最新版本为 V10，本日不新增迁移或业务表；当前仓库没有 Git remote，因此 GitHub-hosted Actions 的真实绿色运行必须在配置远端并推送后才能验收，不能只凭 YAML 文件存在宣称 CI 已通过。
+- **目标交付流**：
+
+  ```text
+  本地或 GitHub Actions 获取源码
+    → Java 17 / Maven 编译、测试并生成 Spring Boot 可执行 JAR
+    → Docker 多阶段构建，仅把运行产物带入运行镜像
+    → Compose 启动 MySQL / RabbitMQ / Redis 并等待健康
+    → 应用通过 Compose 服务名连接三个依赖并执行 Flyway V1～V10
+    → 应用健康检查通过
+    → 验证 OpenAPI、JWT 登录和一条受保护业务请求
+  ```
+
+- **范围边界**：
+  - 本日只完成容器构建契约、应用镜像、构建上下文排除、Compose 应用服务、容器环境变量、健康/启停行为、GitHub Actions 编译测试打包与镜像构建、对应文档和真实容器验收。
+  - GitHub Actions 只验证镜像可构建，不向 Docker Hub/GHCR 推送镜像，不保存或打印真实密码/JWT，不部署到服务器；镜像发布和真实 Linux 部署属于 Day 4。
+  - 不实现 Micrometer 自定义业务指标、Prometheus/Grafana、JMeter、性能优化、安全报告、故障演练或最终简历材料。
+  - 不修改 V1～V10，不新增业务接口、业务状态、数据库表、前端、Nginx、Kubernetes、Helm、OpenTelemetry 或 ELK。
+- **设计约束**：
+  - 使用 Java 17 多阶段构建：构建阶段负责 Maven 打包，运行阶段只保留 JRE、可执行 JAR、必要健康探针和最小运行用户；基础镜像使用明确版本系列，不使用漂移的 `latest`。
+  - `.dockerignore` 必须排除 `.git`、`.env`、`target`、IDE 文件和日志等无关或敏感内容；任何真实数据库、RabbitMQ、Redis 密码和 JWT 密钥都只能在运行时注入，不能进入镜像层、Compose 文件或 GitHub 日志。
+  - Compose 应用服务通过 `mysql`、`rabbitmq`、`redis` 服务名通信，等待三个依赖 healthy 后启动；宿主机运行仍默认使用 `127.0.0.1`，不得为了容器化破坏现有开发方式。
+  - 应用容器需有限内存下可启动、使用非 root 用户、暴露 8080、具备健康检查和合理停止宽限期；数据库、消息和缓存数据继续使用命名卷，不因应用重建而丢失。
+  - CI 在 `push` 与 `pull_request` 上使用 Java 17 和 Maven 缓存，启动真实 MySQL/RabbitMQ/Redis 依赖，等待健康后执行完整测试和打包，再构建应用镜像；同一测试阶段不重复执行整套测试来伪造覆盖。
+- **执行顺序**：
+  1. 复核 `PROJECT_BRIEF.md`、Day 1 契约、`pom.xml`、应用配置、现有 Compose、测试外部依赖和敏感变量，新增 Day 2 设计文档并锁定镜像/Compose/CI 契约。
+  2. 新增多阶段 `Dockerfile` 与 `.dockerignore`，构建 Spring Boot 可执行 JAR，并检查最终镜像不包含源码、Maven、本地 `.env` 或宿主机 `target`。
+  3. 将 MySQL host 改为“宿主机默认值 + 环境变量覆盖”，补齐安全的 `.env.example` 占位说明；不得提交本机 `.env`。
+  4. 在 `docker-compose.yml` 增加应用服务、内部服务名连接、依赖健康条件、端口、运行时密钥注入、应用健康检查和停止策略。
+  5. 新增 GitHub Actions workflow：检出源码、配置 Java 17/Maven 缓存、启动并等待依赖、运行 `mvn clean package`、构建 Docker 镜像、失败时输出不含凭据的诊断信息并清理资源。
+  6. 更新 README，分别说明宿主机 Maven 启动、完整 Compose 启动、环境变量准备、健康检查、查看日志、停止与保留/清理数据卷的区别。
+  7. 运行配置与构建验收：校验 Compose 配置、执行完整 Maven 测试、构建镜像，并检查最终镜像用户、层内容、标签和架构信息。
+  8. 使用独立验收环境从空库启动四服务，验证 Flyway V1→V10、四服务 healthy、`/actuator/health`、OpenAPI、真实 JWT 登录、授权请求及应用容器重启后的数据/消息依赖恢复。
+  9. 配置 GitHub remote 后推送分支，确认一次真实 `push` 或 `pull_request` Actions run 全绿并记录链接；若远端仍缺失，本项保持未完成，Day 2 不写“CI 已验证”。
+  10. 仅清理本日创建的验收容器、网络、临时卷和镜像，保留用户原有开发数据；执行敏感信息检查、Day 3～Day 7 范围审计、`git diff --check` 和最终工作区审查。
+- **任务**：
+  - [x] 新增 `docs/design/week6-day2-containerization-and-ci-design.md`，记录镜像分层、配置注入、Compose 依赖、CI 流程、失败路径、测试矩阵和回滚边界。
+  - [x] 新增 Java 17 多阶段 `Dockerfile`，构建可执行 JAR 并以非 root 用户运行最小 JRE 镜像。
+  - [x] 新增 `.dockerignore`，排除 `.env`、Git 元数据、宿主机构建产物、IDE 文件和日志。
+  - [x] 调整数据源 host 配置并补齐 `.env.example`，同时兼容宿主机和 Compose 网络；不写入真实凭据。
+  - [x] 为 Compose 增加应用服务、依赖健康条件、运行时环境变量、8080 端口、健康检查和停止宽限期。
+  - [x] 新增 GitHub Actions workflow，在真实依赖上完成 Java 17 编译、370+ 测试、JAR 打包和 Docker 镜像构建。
+  - [x] 更新 README 的镜像构建、完整 Compose、日志、停止、数据卷和故障定位说明。
+  - [x] 运行 `docker compose config`、完整 `mvn clean package` 和 `docker build`，记录实际测试与构建结果。
+  - [x] 从空库运行完整 Compose，验证 Flyway V1→V10、四服务健康、OpenAPI、JWT/RBAC 和应用重启恢复。
+  - [ ] 在 GitHub-hosted runner 上取得一次真实绿色 Actions run；未配置远端时不得勾选。
+  - [x] 清理本日临时资源，确认原有开发数据未被删除，并完成敏感信息、范围、镜像内容和 `git diff --check` 审计。
+- **关键文件**：
+  - `docs/design/week6-day2-containerization-and-ci-design.md`
+  - `TASKS.md`
+  - `Dockerfile`
+  - `.dockerignore`
+  - `docker-compose.yml`
+  - `.env.example`
+  - `src/main/resources/application.yml`
+  - `.github/workflows/ci.yml`
+  - `README.md`
+- **验收标准**：完整 `mvn clean package` 通过且无跳过；应用镜像可重复构建、以非 root 用户启动且不包含本地凭据/无关构建内容；空环境中四服务全部 healthy，Flyway 从 V1 升至 V10，健康、OpenAPI、JWT/RBAC 和应用重启验证通过；真实 GitHub Actions run 完成测试、打包和镜像构建；临时资源清理、原有数据保护、敏感信息检查、Day 3～Day 7 范围审计和 `git diff --check` 全部通过。
+- **本地验收结论**：`mvn -B -ntp clean package` 实跑 370/370，0 failures、0 errors、0 skipped；Compose 配置和 actionlint 1.7.12 均通过。应用镜像约 158.94 MiB，以 UID/GID 10001 的 `finguard` 用户运行 Java 17.0.19，镜像内无 Maven、源码、`.env` 或宿主机构建目录。独立空卷环境中四服务全部 healthy，Flyway 从 V1 应用到 V10；健康、18 条 OpenAPI 路径、Swagger UI、ADMIN/REVIEWER 登录、匿名 401、越权 403、RabbitMQ、Redis 以及应用重启后的登录和数据库数据保持均通过。验收容器、网络和临时卷已删除，原开发卷与进入验收前的迁移/用户/账户计数一致；敏感信息、范围、镜像内容和 `git diff --check` 审计通过。首次镜像依赖下载曾遇到本机 Docker DNS 瞬时失败，网络恢复后构建成功，未通过修改代码掩盖错误。
+- **未完成项**：仓库仍没有 Git remote，当前 GitHub 账号也没有可直接关联的 `finguard-core` 仓库；创建远端还需要确定公开/私有属性。因此真实 GitHub-hosted Actions run 未执行，上方对应任务保持未勾选，不能宣称托管 CI 已验证。
+- **学习重点**：Docker 镜像与容器的区别、多阶段构建与分层缓存、build-time 和 runtime 配置、Compose 服务 DNS 与健康依赖、容器 PID 1/优雅停止、命名卷、CI 与 CD 的边界、GitHub Actions job/step/cache/service 的职责、可重复构建和密钥注入。
+- **常见错误预防**：不要把 `.env`、JWT 或密码 `COPY` 进镜像；不要在容器内继续连接 `127.0.0.1` 查找外部依赖；不要只写 `depends_on` 而忽略健康状态；不要用 root 运行应用；不要使用 `latest`；不要把宿主机 `target` 当作唯一镜像输入；不要在 CI 只执行 `-DskipTests package`；不要未经远端实跑就宣称 Actions 成功；不要用 `docker compose down -v` 删除用户原有数据来完成验收。
+- **回滚**：删除 Day 2 新增的 Docker/CI/设计文件，移除 Compose 应用服务，恢复本日的配置与 README 改动；只删除明确属于 Day 2 验收且可重建的容器、网络、临时卷和镜像，不删除现有开发卷，不修改 V1～V10，也不回退 Day 1 OpenAPI 或 Week 1～Week 5 业务能力。
+- **提交建议**：`build: containerize application and add CI image build`
+
 ## 9. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
@@ -1831,4 +1905,5 @@
 | Week 5 Day 5 关键业务操作审计日志 | `f58ca6e` |
 | Week 5 Day 6 Redis 统计缓存与固定窗口限流 | `413d858` |
 | Week 5 Day 7 综合验收与周复盘 | `8e35731` |
-| Week 6 Day 1 生产化契约与 OpenAPI 演示基线 | 本次提交 |
+| Week 6 Day 1 生产化契约与 OpenAPI 演示基线 | `6ca94b8` |
+| Week 6 Day 2 本地容器化与 CI workflow（托管运行待远端） | 本次提交 |
