@@ -41,7 +41,7 @@
 | Week 5 Day 6 | 已完成 | Redis 统计缓存、提交后失效、登录/上传固定窗口限流与故障降级已完成真实验收 |
 | Week 5 Day 7 | 已完成 | Week 5 综合验收、并发/幂等/故障证据、清理和周复盘完成；完整回归 366/366 |
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
-| Week 6 Day 2 | 进行中 | 本地镜像、四服务 Compose、workflow 与真实空卷验收完成；GitHub-hosted run 等待远端仓库 |
+| Week 6 Day 2 | 已完成 | 应用镜像、四服务 Compose、本地空卷验收与真实 GitHub-hosted CI 全部通过 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1782,7 +1782,7 @@
 
 ### Week 6 Day 2：应用容器化、完整 Compose 与 GitHub Actions
 
-- **状态**：进行中（本地交付与验收完成；GitHub-hosted run 等待远端仓库）
+- **状态**：已完成
 - **业务目标**：把当前只能由宿主机 Maven 启动的 FinGuard Core 打包为可重复构建、最小运行、非 root 执行的应用镜像；让应用、MySQL、RabbitMQ、Redis 能通过一条 Compose 命令形成健康闭环；再由 GitHub Actions 在干净环境中自动完成编译、测试、打包和镜像构建，尽早发现“本机能跑、换环境失败”的工程问题。
 - **当前基线**：
   - Week 6 Day 1 已在提交 `6ca94b8` 完成，历史完整回归为 370/370；这是进入 Day 2 的历史证据，本日必须重新实跑并记录新结果。
@@ -1833,7 +1833,7 @@
   - [x] 更新 README 的镜像构建、完整 Compose、日志、停止、数据卷和故障定位说明。
   - [x] 运行 `docker compose config`、完整 `mvn clean package` 和 `docker build`，记录实际测试与构建结果。
   - [x] 从空库运行完整 Compose，验证 Flyway V1→V10、四服务健康、OpenAPI、JWT/RBAC 和应用重启恢复。
-  - [ ] 在 GitHub-hosted runner 上取得一次真实绿色 Actions run；未配置远端时不得勾选。
+  - [x] 在 GitHub-hosted runner 上取得一次真实绿色 Actions run；未配置远端时不得勾选。
   - [x] 清理本日临时资源，确认原有开发数据未被删除，并完成敏感信息、范围、镜像内容和 `git diff --check` 审计。
 - **关键文件**：
   - `docs/design/week6-day2-containerization-and-ci-design.md`
@@ -1847,7 +1847,7 @@
   - `README.md`
 - **验收标准**：完整 `mvn clean package` 通过且无跳过；应用镜像可重复构建、以非 root 用户启动且不包含本地凭据/无关构建内容；空环境中四服务全部 healthy，Flyway 从 V1 升至 V10，健康、OpenAPI、JWT/RBAC 和应用重启验证通过；真实 GitHub Actions run 完成测试、打包和镜像构建；临时资源清理、原有数据保护、敏感信息检查、Day 3～Day 7 范围审计和 `git diff --check` 全部通过。
 - **本地验收结论**：`mvn -B -ntp clean package` 实跑 370/370，0 failures、0 errors、0 skipped；Compose 配置和 actionlint 1.7.12 均通过。应用镜像约 158.94 MiB，以 UID/GID 10001 的 `finguard` 用户运行 Java 17.0.19，镜像内无 Maven、源码、`.env` 或宿主机构建目录。独立空卷环境中四服务全部 healthy，Flyway 从 V1 应用到 V10；健康、18 条 OpenAPI 路径、Swagger UI、ADMIN/REVIEWER 登录、匿名 401、越权 403、RabbitMQ、Redis 以及应用重启后的登录和数据库数据保持均通过。验收容器、网络和临时卷已删除，原开发卷与进入验收前的迁移/用户/账户计数一致；敏感信息、范围、镜像内容和 `git diff --check` 审计通过。首次镜像依赖下载曾遇到本机 Docker DNS 瞬时失败，网络恢复后构建成功，未通过修改代码掩盖错误。
-- **未完成项**：仓库仍没有 Git remote，当前 GitHub 账号也没有可直接关联的 `finguard-core` 仓库；创建远端还需要确定公开/私有属性。因此真实 GitHub-hosted Actions run 未执行，上方对应任务保持未勾选，不能宣称托管 CI 已验证。
+- **托管 CI 验收结论**：已创建私有远端 `jkwang1129/finguard-core` 并将本地 `main` 推送为 `origin/main`。首次真实 `push` 运行 [31366242428](https://github.com/jkwang1129/finguard-core/actions/runs/31366242428) 在 GitHub-hosted `ubuntu-latest` runner 上用时 6 分 26 秒并全绿：真实 MySQL/RabbitMQ/Redis 启动成功，`mvn -B -ntp clean package` 为 370/370、0 failures、0 errors、0 skipped，Docker 镜像构建与非 root/Java 17/无 Maven 内容断言通过，依赖资源在 `always()` 步骤中完成清理。
 - **学习重点**：Docker 镜像与容器的区别、多阶段构建与分层缓存、build-time 和 runtime 配置、Compose 服务 DNS 与健康依赖、容器 PID 1/优雅停止、命名卷、CI 与 CD 的边界、GitHub Actions job/step/cache/service 的职责、可重复构建和密钥注入。
 - **常见错误预防**：不要把 `.env`、JWT 或密码 `COPY` 进镜像；不要在容器内继续连接 `127.0.0.1` 查找外部依赖；不要只写 `depends_on` 而忽略健康状态；不要用 root 运行应用；不要使用 `latest`；不要把宿主机 `target` 当作唯一镜像输入；不要在 CI 只执行 `-DskipTests package`；不要未经远端实跑就宣称 Actions 成功；不要用 `docker compose down -v` 删除用户原有数据来完成验收。
 - **回滚**：删除 Day 2 新增的 Docker/CI/设计文件，移除 Compose 应用服务，恢复本日的配置与 README 改动；只删除明确属于 Day 2 验收且可重建的容器、网络、临时卷和镜像，不删除现有开发卷，不修改 V1～V10，也不回退 Day 1 OpenAPI 或 Week 1～Week 5 业务能力。
@@ -1906,4 +1906,4 @@
 | Week 5 Day 6 Redis 统计缓存与固定窗口限流 | `413d858` |
 | Week 5 Day 7 综合验收与周复盘 | `8e35731` |
 | Week 6 Day 1 生产化契约与 OpenAPI 演示基线 | `6ca94b8` |
-| Week 6 Day 2 本地容器化与 CI workflow（托管运行待远端） | 本次提交 |
+| Week 6 Day 2 应用容器化与 GitHub Actions | `97fd641`、本次提交 |

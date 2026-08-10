@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 6 Day 2 本地交付已完成、GitHub 托管验证待远端：Java 17 非 root 应用镜像、四服务 Compose、运行时配置注入和 CI workflow 已实现。本地 `mvn clean package` 为 370/370；空卷环境的 Flyway V1～V10、四服务健康、OpenAPI、JWT/RBAC、应用重启和资源清理均已验证。仓库尚无 Git remote，因此不能把 GitHub-hosted Actions 标记为已验证。
+当前进度为 Week 6 Day 2 已完成：Java 17 非 root 应用镜像、四服务 Compose、运行时配置注入和 CI workflow 已实现。本地与 GitHub-hosted `mvn clean package` 均为 370/370；空卷环境的 Flyway V1～V10、四服务健康、OpenAPI、JWT/RBAC、应用重启和资源清理均已验证。首次真实 GitHub Actions `push` 运行已完成测试、打包、镜像构建、镜像断言和资源清理：[run 31366242428](https://github.com/jkwang1129/finguard-core/actions/runs/31366242428)。
 
 ## 当前技术基线
 
