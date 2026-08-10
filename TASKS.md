@@ -40,7 +40,7 @@
 | Week 5 Day 5 | 已完成 | V10 审计真源、五类白名单事件、同事务回滚、ADMIN 查询与真实安全验收完成 |
 | Week 5 Day 6 | 已完成 | Redis 统计缓存、提交后失效、登录/上传固定窗口限流与故障降级已完成真实验收 |
 | Week 5 Day 7 | 已完成 | Week 5 综合验收、并发/幂等/故障证据、清理和周复盘完成；完整回归 366/366 |
-| Week 6 | 待规划 | CI/CD、Linux 部署、监控、压测、安全测试和项目收尾 |
+| Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1717,7 +1717,69 @@
 - **验收**：聚焦测试 108/108，完整 `mvn clean test` 为 366/366，失败/错误/跳过均为 0；三类风险规则、异常审核、乐观锁、五类审计、统计缓存和两类限流均有自动化与真实 HTTP/MySQL/Redis/RabbitMQ 证据；数据、消息、缓存、凭据和端口清理完成。
 - **提交建议**：`docs: complete week 5 acceptance review`
 
-## 8. 后续路线
+## 8. Week 6：生产化、验证与项目收尾
+
+### Week 6 Day 1：生产化契约与 OpenAPI 演示基线
+
+- **状态**：已完成
+- **业务目标**：补齐 P0 的 Swagger/OpenAPI，使第三方可以匿名阅读接口、通过登录获取 JWT、在 Swagger UI 中配置 Bearer Token 并按 ADMIN/REVIEWER 权限演示现有业务闭环；同时锁定 Day 2～Day 7 的生产化职责。
+- **当前基线**：
+  - Week 5 已在提交 `8e35731` 收口，历史完整回归为 366/366；进入本日后必须重新执行，不能复制历史数字作为 Day 1 证据。
+  - 当前应用已有 Actuator 健康检查、JWT、RBAC 和完整业务接口，但没有 Springdoc、OpenAPI 配置、Swagger UI 或文档端点白名单。
+  - Flyway 最新版本为 V10；本日不修改数据库迁移和业务状态。
+- **目标请求流**：
+
+  ```text
+  匿名访问 Swagger UI / OpenAPI JSON
+    → 调用登录接口取得 JWT
+    → Swagger UI Authorize 配置 Bearer Token
+    → 既有 Spring Security 继续执行 ADMIN / REVIEWER RBAC
+    → Controller → Service → MySQL / Redis / RabbitMQ
+  ```
+
+- **范围边界**：
+  - 本日只完成生产化契约、Springdoc/OpenAPI、文档端点安全白名单、必要 Controller 文档说明、自动化测试和真实 Swagger/JWT 验收。
+  - 不新增业务接口、数据库表、Flyway V11、Dockerfile、应用容器、GitHub Actions、Micrometer 指标、Prometheus/Grafana、Linux 部署、JMeter、安全报告或故障演练。
+  - 不引入前端页面、API Gateway、代码生成器、Kubernetes、OpenTelemetry 或 ELK。
+- **执行顺序**：
+  1. 核对 `PROJECT_BRIEF.md`、Week 5 复盘、Controller、DTO、错误响应和权限矩阵，区分已有事实与 Week 6 计划。
+  2. 新增 Day 1 设计文档，锁定 Springdoc 版本、API 分组、JWT 安全方案、测试矩阵和 Day 2～Day 7 边界。
+  3. 添加 Springdoc WebMVC UI 依赖和统一 OpenAPI 配置。
+  4. 将 Swagger UI/OpenAPI JSON 加入匿名白名单，同时保持全部业务 RBAC 不变。
+  5. 为八组核心 Controller 增加 Tag、操作摘要和必要的隐藏参数说明。
+  6. 新增 OpenAPI/Swagger UI/安全聚焦测试并运行完整 `mvn clean test`。
+  7. 在依赖健康后启动真实应用，验证健康、OpenAPI、Swagger UI、ADMIN/REVIEWER JWT、匿名 `401` 与越权 `403`。
+  8. 清理验收数据、消息、key、进程和端口，执行敏感信息检查、Day 2～Day 7 范围审计和 `git diff --check`。
+- **任务**：
+  - [x] 新增 `docs/design/week6-day1-productionization-and-openapi-contract.md`。
+  - [x] 锁定 Day 2～Day 7 的 Docker/CI、监控、Linux、压测、安全/故障和最终收口职责。
+  - [x] 添加 `springdoc-openapi-starter-webmvc-ui` 兼容版本。
+  - [x] 新增 OpenAPI 标题、版本、简介和 `bearerAuth` HTTP Bearer/JWT 配置。
+  - [x] 将 `/swagger-ui.html`、`/swagger-ui/**`、`/v3/api-docs`、`/v3/api-docs/**` 加入匿名白名单。
+  - [x] 保证登录操作无需 Bearer Token，业务操作显示并实际要求 JWT。
+  - [x] 为认证、账户、交易、导入、对账、审核、审计和统计 Controller 增加必要说明。
+  - [x] 隐藏 `HttpServletRequest`、`Jwt` 等框架注入参数，不向客户端暴露内部实现。
+  - [x] 新增 OpenAPI JSON、Swagger UI、核心路径、安全方案和 RBAC 不回退测试。
+  - [x] 运行聚焦测试和完整 `mvn clean test`，记录真实数字。
+  - [x] 使用真实应用、ADMIN/REVIEWER JWT 和 HTTP 完成文档与权限验收。
+  - [x] 清理临时资源，执行敏感信息检查、范围审计和 `git diff --check`。
+- **关键文件**：
+  - `docs/design/week6-day1-productionization-and-openapi-contract.md`
+  - `TASKS.md`
+  - `pom.xml`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/config/OpenApiConfiguration.java`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/java/com/finguard/core/**/controller/*Controller.java`
+  - `src/test/java/com/finguard/core/OpenApiHttpIntegrationTest.java`
+- **验收标准**：匿名访问 OpenAPI JSON 和 Swagger UI 成功；文档包含八组核心路径、JWT Bearer Scheme 与登录例外；业务接口匿名仍为 `401`、越权仍为 `403`；聚焦测试、完整回归、真实 JWT/HTTP 验收、资源清理、敏感信息检查、范围审计和 `git diff --check` 全部通过。
+- **验收结论**：Springdoc 2.8.17 与 Spring Boot 3.5.16/Java 17 编译成功；OpenAPI 聚焦测试 4/4，完整 `mvn clean test` 370/370，均为 0 failures、0 errors、0 skipped。真实应用健康为 `200/UP`，OpenAPI 返回 18 条路径，Swagger UI 与 swagger-config 均为 200；真实 ADMIN/REVIEWER 登录和账户查询均为 200，ADMIN 审计查询为 200，匿名账户查询为 401，REVIEWER 创建账户和查询审计均为 403。临时用户清理后为 0，8080 端口已释放，Flyway 仍为 V10。
+- **学习重点**：OpenAPI 规范与 Swagger UI 的区别、运行时接口扫描、全局 Security Requirement、登录操作的空安全覆盖、Spring Security 白名单与 RBAC 的职责分离、框架参数隐藏、文档契约测试。
+- **常见错误预防**：不要使用面向 Spring Boot 4 的 Springdoc 3.x；不要只放行 `/swagger-ui.html` 而遗漏静态资源和 `/v3/api-docs/**`；不要因为文档公开而放开 `/api/**`；不要让登录继承全局 Bearer 要求；不要把 JWT、密码、`.env` 或内部框架参数写进 OpenAPI；Windows PowerShell 5 生成随机值时不要依赖较新的静态 `RandomNumberGenerator.Fill` API。
+- **回滚**：移除 Springdoc 依赖、OpenAPI 配置、Controller 文档注解、文档白名单和对应测试；不得修改 V1～V10、业务数据或 Week 1～Week 5 的 JWT/RBAC 与业务语义。
+- **提交建议**：`feat: add OpenAPI documentation and lock week 6 contract`
+
+## 9. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
 
@@ -1728,7 +1790,7 @@
 | Week 5 | Day 1～Day 7 已规划；风险、审核、乐观锁、审计、Redis 缓存/限流和周验收按顺序推进 |
 | Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
 
-## 9. Git 里程碑索引
+## 10. Git 里程碑索引
 
 | 里程碑 | 提交 |
 |---|---|
@@ -1768,4 +1830,5 @@
 | Week 5 Day 4 审核接口与乐观锁并发控制 | `286391f` |
 | Week 5 Day 5 关键业务操作审计日志 | `f58ca6e` |
 | Week 5 Day 6 Redis 统计缓存与固定窗口限流 | `413d858` |
-| Week 5 Day 7 综合验收与周复盘 | 本次提交 |
+| Week 5 Day 7 综合验收与周复盘 | `8e35731` |
+| Week 6 Day 1 生产化契约与 OpenAPI 演示基线 | 本次提交 |

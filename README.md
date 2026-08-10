@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 5 Day 7 已完成：风险、审核、乐观锁、五类审计、Redis 统计缓存和登录/上传限流已完成综合验收与周复盘。完整 `mvn clean test` 为 366/366，真实 MySQL/RabbitMQ/Redis/JWT/HTTP、并发 409、缓存失效、429、Redis 故障恢复和数据清理均已验证。
+当前进度为 Week 6 Day 1 已完成：生产化边界与 Day 2～Day 7 职责已锁定，Springdoc/OpenAPI、Swagger UI 和 JWT Bearer 演示基线已经通过安全测试与真实 HTTP 验收。完整 `mvn clean test` 为 370/370；文档匿名访问、ADMIN/REVIEWER JWT、业务接口 `401/403` 和资源清理均已验证。
 
 ## 当前技术基线
 
@@ -11,6 +11,7 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - Spring Boot 3.5.16
 - Spring MVC
 - Spring Boot Actuator
+- Springdoc OpenAPI 2.8.17 / Swagger UI
 - Spring Security
 - OAuth2 Resource Server / JWT
 - BCrypt
@@ -68,7 +69,7 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - `GET /api/statistics/overview` 聚合导入、对账、风险与审核状态，以显式 JSON 缓存到固定 Redis key 60 秒；ADMIN/REVIEWER 可查，事务成功提交后失效，Redis 异常时回源 MySQL；
 - 登录按 remote address 摘要与规范化用户名摘要限制为 5 次/300 秒，成功签发 JWT 后清除当前窗口；CSV 上传按已验签 userId 限制为 10 次/60 秒；
 - 两类限流共用 Lua 原子 `INCR + PEXPIRE + PTTL`，超限统一返回 `429 RATE_LIMIT_EXCEEDED + Retry-After`，Redis 异常时 fail-open；
-- 366 个自动化测试，以及真实 MySQL、RabbitMQ、Redis、JWT、HTTP、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、缓存失效、限流、乐观锁并发和应用健康验收。
+- 370 个自动化测试，以及真实 MySQL、RabbitMQ、Redis、JWT、HTTP、OpenAPI/Swagger、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、缓存失效、限流、乐观锁并发和应用健康验收。
 
 ## 本地运行
 
@@ -136,6 +137,15 @@ GET http://localhost:8080/actuator/health
 ```json
 {"status":"UP"}
 ```
+
+OpenAPI 和 Swagger UI：
+
+```text
+GET http://localhost:8080/v3/api-docs
+GET http://localhost:8080/swagger-ui/index.html
+```
+
+Swagger UI 可以匿名打开；先调用登录接口取得 JWT，再使用右上角 `Authorize` 配置 Bearer Token。文档端点公开不代表业务端点公开，实际读写权限仍由 Spring Security 的 ADMIN/REVIEWER RBAC 控制。
 
 ## 当前接口
 

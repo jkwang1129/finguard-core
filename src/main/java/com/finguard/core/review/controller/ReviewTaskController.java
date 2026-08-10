@@ -5,6 +5,9 @@ import com.finguard.core.review.dto.ReviewDecisionRequest;
 import com.finguard.core.review.dto.ReviewTaskQueryRequest;
 import com.finguard.core.review.service.ReviewTaskService;
 import com.finguard.core.review.vo.ReviewTaskResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/api/review-tasks")
+@Tag(name = "Review Tasks", description = "Exception review workflow")
 public class ReviewTaskController {
 
     private final ReviewTaskService reviewTaskService;
@@ -30,21 +34,25 @@ public class ReviewTaskController {
     }
 
     @GetMapping
+    @Operation(summary = "Query review tasks")
     public PageResponse<ReviewTaskResponse> query(
             @Valid @ModelAttribute ReviewTaskQueryRequest request) {
         return reviewTaskService.query(request);
     }
 
     @GetMapping("/{reviewTaskId}")
+    @Operation(summary = "Get a review task by ID")
     public ReviewTaskResponse getById(
             @PathVariable @Positive Long reviewTaskId) {
         return reviewTaskService.getById(reviewTaskId);
     }
 
     @PatchMapping("/{reviewTaskId}/decision")
+    @Operation(summary = "Confirm or ignore a pending review task")
     public ReviewTaskResponse decide(
             @PathVariable @Positive Long reviewTaskId,
             @Valid @RequestBody ReviewDecisionRequest request,
+            @Parameter(hidden = true)
             @AuthenticationPrincipal Jwt jwt) {
         return reviewTaskService.decide(
                 reviewTaskId,

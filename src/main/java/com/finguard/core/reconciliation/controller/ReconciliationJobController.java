@@ -6,6 +6,9 @@ import com.finguard.core.reconciliation.dto.ReconciliationResultQueryRequest;
 import com.finguard.core.reconciliation.service.ReconciliationJobService;
 import com.finguard.core.reconciliation.vo.ReconciliationJobResponse;
 import com.finguard.core.reconciliation.vo.ReconciliationResultResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpHeaders;
@@ -27,6 +30,10 @@ import java.net.URI;
 @Validated
 @RestController
 @RequestMapping("/api/reconciliation-jobs")
+@Tag(
+        name = "Reconciliation Jobs",
+        description = "Asynchronous reconciliation jobs"
+)
 public class ReconciliationJobController {
 
     private final ReconciliationJobService reconciliationJobService;
@@ -37,9 +44,11 @@ public class ReconciliationJobController {
     }
 
     @PostMapping
+    @Operation(summary = "Create an asynchronous reconciliation job")
     public ResponseEntity<ReconciliationJobResponse> create(
             @Valid @RequestBody
             CreateReconciliationJobRequest request,
+            @Parameter(hidden = true)
             @AuthenticationPrincipal Jwt jwt) {
         ReconciliationJobResponse response =
                 reconciliationJobService.create(
@@ -62,6 +71,7 @@ public class ReconciliationJobController {
     }
 
     @GetMapping("/{reconciliationJobId}")
+    @Operation(summary = "Get a reconciliation job by ID")
     public ReconciliationJobResponse getById(
             @PathVariable @Positive Long reconciliationJobId) {
         return reconciliationJobService.getById(
@@ -70,6 +80,7 @@ public class ReconciliationJobController {
     }
 
     @GetMapping("/{reconciliationJobId}/results")
+    @Operation(summary = "Query results for a reconciliation job")
     public PageResponse<ReconciliationResultResponse> queryResults(
             @PathVariable @Positive Long reconciliationJobId,
             @Valid @ModelAttribute

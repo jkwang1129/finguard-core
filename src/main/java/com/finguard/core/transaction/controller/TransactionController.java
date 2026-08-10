@@ -6,6 +6,8 @@ import com.finguard.core.transaction.dto.UpdateTransactionRequest;
 import com.finguard.core.transaction.service.TransactionService;
 import com.finguard.core.transaction.vo.TransactionResponse;
 import com.finguard.core.common.vo.PageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/api/transactions")
+@Tag(name = "Transactions", description = "Manual transaction management")
 public class TransactionController {
 
     private final TransactionService transactionService;
@@ -33,6 +36,7 @@ public class TransactionController {
     }
 
     @PostMapping
+    @Operation(summary = "Create a manual transaction")
     public ResponseEntity<TransactionResponse> create(
             @Valid @RequestBody CreateTransactionRequest request) {
         TransactionResponse response = transactionService.create(request);
@@ -40,18 +44,21 @@ public class TransactionController {
     }
 
     @GetMapping("/{transactionId}")
+    @Operation(summary = "Get a transaction by ID")
     public TransactionResponse getById(
             @PathVariable @Positive Long transactionId) {
         return transactionService.getById(transactionId);
     }
 
     @GetMapping
+    @Operation(summary = "Query transactions")
     public PageResponse<TransactionResponse> query(
             @Valid @ModelAttribute TransactionQueryRequest request) {
         return transactionService.query(request);
     }
 
     @PutMapping("/{transactionId}")
+    @Operation(summary = "Replace a manual transaction")
     public TransactionResponse update(
             @PathVariable @Positive Long transactionId,
             @Valid @RequestBody UpdateTransactionRequest request) {
@@ -59,6 +66,7 @@ public class TransactionController {
     }
 
     @DeleteMapping("/{transactionId}")
+    @Operation(summary = "Delete a manual transaction")
     public ResponseEntity<Void> delete(
             @PathVariable @Positive Long transactionId) {
         transactionService.delete(transactionId);

@@ -8,6 +8,9 @@ import com.finguard.core.importjob.service.ImportJobService;
 import com.finguard.core.importjob.vo.ImportJobResponse;
 import com.finguard.core.importjob.vo.ImportRowErrorResponse;
 import com.finguard.core.ratelimit.service.UploadRateLimitGuard;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +35,7 @@ import java.net.URI;
 @Validated
 @RestController
 @RequestMapping("/api/import-jobs")
+@Tag(name = "Import Jobs", description = "Asynchronous CSV import jobs")
 public class ImportJobController {
 
     private final ImportJobService importJobService;
@@ -45,9 +49,11 @@ public class ImportJobController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload a CSV file for asynchronous import")
     public ResponseEntity<ImportJobResponse> upload(
             @RequestPart(value = "file", required = false)
             MultipartFile file,
+            @Parameter(hidden = true)
             @AuthenticationPrincipal Jwt jwt) throws IOException {
         Long userId = authenticatedUserId(jwt);
         uploadRateLimitGuard.check(userId);
@@ -77,12 +83,14 @@ public class ImportJobController {
     }
 
     @GetMapping("/{importJobId}")
+    @Operation(summary = "Get an import job by ID")
     public ImportJobResponse getById(
             @PathVariable @Positive Long importJobId) {
         return importJobService.getById(importJobId);
     }
 
     @GetMapping("/{importJobId}/errors")
+    @Operation(summary = "Query row errors for an import job")
     public PageResponse<ImportRowErrorResponse> queryErrors(
             @PathVariable @Positive Long importJobId,
             @Valid @ModelAttribute

@@ -7,6 +7,8 @@ import com.finguard.core.account.dto.UpdateAccountStatusRequest;
 import com.finguard.core.account.service.AccountService;
 import com.finguard.core.account.vo.AccountResponse;
 import com.finguard.core.common.vo.PageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/api/accounts")
+@Tag(name = "Accounts", description = "Account management")
 public class AccountController {
 
     private final AccountService accountService;
@@ -34,6 +37,7 @@ public class AccountController {
     }
 
     @PostMapping
+    @Operation(summary = "Create an account")
     public ResponseEntity<AccountResponse> create(
             @Valid @RequestBody CreateAccountRequest request) {
         AccountResponse response = accountService.create(request);
@@ -41,18 +45,21 @@ public class AccountController {
     }
 
     @GetMapping("/{accountId}")
+    @Operation(summary = "Get an account by ID")
     public AccountResponse getById(
             @PathVariable @Positive Long accountId) {
         return accountService.getById(accountId);
     }
 
     @GetMapping
+    @Operation(summary = "Query accounts")
     public PageResponse<AccountResponse> query(
             @Valid @ModelAttribute AccountQueryRequest request) {
         return accountService.query(request);
     }
 
     @PatchMapping("/{accountId}/name")
+    @Operation(summary = "Update an account name")
     public AccountResponse updateName(
             @PathVariable @Positive Long accountId,
             @Valid @RequestBody UpdateAccountNameRequest request) {
@@ -60,6 +67,7 @@ public class AccountController {
     }
 
     @PatchMapping("/{accountId}/status")
+    @Operation(summary = "Update an account status")
     public AccountResponse updateStatus(
             @PathVariable @Positive Long accountId,
             @Valid @RequestBody UpdateAccountStatusRequest request) {
@@ -67,6 +75,7 @@ public class AccountController {
     }
 
     @DeleteMapping("/{accountId}")
+    @Operation(summary = "Delete an unused account")
     public ResponseEntity<Void> delete(
             @PathVariable @Positive Long accountId) {
         accountService.delete(accountId);

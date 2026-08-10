@@ -45,6 +45,13 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
                                 "/api/audit-logs"
                         ).hasRole(RoleCode.ADMIN.name())
                         .requestMatchers(

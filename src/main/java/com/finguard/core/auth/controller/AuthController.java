@@ -5,6 +5,10 @@ import com.finguard.core.auth.service.AuthService;
 import com.finguard.core.auth.vo.LoginResponse;
 import com.finguard.core.ratelimit.model.LoginRateLimitPermit;
 import com.finguard.core.ratelimit.service.LoginRateLimitGuard;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
+@Tag(name = "Authentication", description = "JWT authentication")
 public class AuthController {
 
     private final AuthService authService;
@@ -27,8 +32,11 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @Operation(summary = "Log in and issue a JWT")
+    @SecurityRequirements
     public LoginResponse login(
             @Valid @RequestBody LoginRequest request,
+            @Parameter(hidden = true)
             HttpServletRequest servletRequest) {
         LoginRateLimitPermit permit = loginRateLimitGuard.check(
                 servletRequest.getRemoteAddr(),

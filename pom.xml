@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <commons-csv.version>1.14.1</commons-csv.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <springdoc.version>2.8.17</springdoc.version>
     </properties>
 
     <dependencies>
@@ -47,6 +48,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
