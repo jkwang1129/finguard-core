@@ -288,6 +288,12 @@ sh scripts/linux/status.sh
 
 六个服务必须全部 healthy。MySQL、RabbitMQ 和 Redis 不发布宿主机端口；应用、Prometheus 和 Grafana 只绑定 `127.0.0.1`。
 
+排错时只读取指定服务的有限日志，不使用无限跟随：
+
+```bash
+sh scripts/linux/logs.sh app 100
+```
+
 ### 4. SSH 隧道访问
 
 客户端建立本地端口转发：
@@ -347,7 +353,7 @@ sh scripts/linux/status.sh
 4. 构建应用 Docker 镜像；
 5. 检查镜像使用非 root 用户、Java 17 且不包含 Maven/源码。
 
-该 workflow 的测试 job 负责 CI 验证；只有 `main` 的 `push` 在测试成功后进入独立发布 job，将完整 Git SHA 镜像推送到私有 GHCR。workflow 不自动连接或部署服务器，也不使用服务器生产凭据。
+该 workflow 的测试 job 负责 CI 验证；只有 `main` 的 `push` 在测试成功后进入独立发布 job，将完整 Git SHA 镜像推送到私有 GHCR。发布 job 会在隔离的 GitHub-hosted Ubuntu runner 上验证六服务部署、保留卷停机恢复以及可用前序 SHA 的回滚/再升级，并在结束时清理 runner 资源；它不会自动连接用户服务器，也不使用服务器生产凭据。
 
 ## 当前接口
 

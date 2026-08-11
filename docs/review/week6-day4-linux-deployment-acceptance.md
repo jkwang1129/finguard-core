@@ -66,6 +66,21 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 
 发布 job 在推送镜像后执行 `preflight.sh` 和 `deploy.sh`，创建 5 个卷并等待六服务健康；application health、OpenAPI、Prometheus health、Grafana health 都返回 HTTP 200，Prometheus target 为 UP。随后执行 `stop.sh`、再次 `deploy.sh` 和相同状态检查，命名卷保持不变。首个发布版本没有已发布的前序 SHA，因此本轮没有伪造回滚结果；升级/回滚由下一次托管运行补证。job 结束时只删除 runner 内 project `finguard-ci-deploy` 的验收资源并退出 GHCR。
 
+### 4.1 跨 SHA 回滚与再升级
+
+修复后的 GitHub Actions run [`31474425853`](https://github.com/jkwang1129/finguard-core/actions/runs/31474425853) 结论为 success：
+
+| 证据 | 实际值 |
+|---|---|
+| 当前 Git SHA | `8b29433cf76bfcf66633c665188578670ddb924e` |
+| 当前 digest | `sha256:9adec42f2f5f85db110ec1c49bf327c0c8001e5ebd254dcd92423ed9cd487a96` |
+| 回滚 Git SHA | `ce74fa420ab4e0d64d0a0f286fab9d959228edbf` |
+| 回滚 digest | `sha256:d2a37e693e7d19189cce902d97cbd0eba4a67a76c036813b504d520595e135e2` |
+| test job | success，378/378，5 分 3 秒 |
+| publish/deploy job | success，5 分 26 秒 |
+
+同一组 5 个卷内依次完成：部署当前 SHA、保留卷停止/恢复、回滚到前一 SHA、再次升级到当前 SHA。四次状态门禁均确认 application/OpenAPI/Prometheus/Grafana 为 HTTP 200 且 Prometheus target 为 UP；最终 `.deploy-state/current-image` 为当前 SHA、`previous-image` 为回滚 SHA。失败诊断步骤未触发，`always()` 清理成功移除隔离 runner 的六个容器、网络和 5 个卷。
+
 ## 5. 排错记录
 
 ### 5.1 运维客户端缺少 curl
@@ -89,7 +104,7 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 4. 失败诊断输出了六服务有限日志，`always()` 清理仍完整移除隔离容器、网络和 5 个卷；
 5. 修复为在 endpoint 健康后最多等待 30 秒、每 2 秒查询一次 target，超时仍失败，避免把固定 sleep 当作成功条件。
 
-修复必须由后续真实 hosted run 证明，失败 run 本身不计为回滚验收。
+修复已由绿色 hosted run `31474425853` 证明；失败 run 本身不计为回滚验收。
 
 ## 6. 待授权主机补证
 

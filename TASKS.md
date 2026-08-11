@@ -43,7 +43,7 @@
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
 | Week 6 Day 2 | 已完成 | 应用镜像、四服务 Compose、本地空卷验收与真实 GitHub-hosted CI 全部通过 |
 | Week 6 Day 3 | 已完成 | 三类低基数业务指标、六服务监控栈、Grafana 9 面板和独立真实验收完成；完整回归 378/378 |
-| Week 6 Day 4 | 待执行 | 发布不可变应用镜像，并在真实 Linux 主机完成六服务部署、安全访问、启停、升级、回滚和排错记录 |
+| Week 6 Day 4 | 受阻 | 不可变发布、隔离 Linux 部署和跨 SHA 回滚已通过；等待用户提供授权持久 Linux 主机以完成 SSH、防火墙、生产凭据和最终验收 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1937,7 +1937,7 @@
 
 ### Week 6 Day 4：不可变镜像发布与真实 Linux 部署
 
-- **状态**：待执行
+- **状态**：受阻（等待授权持久 Linux 主机）
 - **业务目标**：把已经在本机和 GitHub-hosted CI 验证过的 FinGuard Core 六服务栈真正交付到一台用户授权的 Linux 主机；服务器只拉取与 Git 提交一一对应的应用镜像，通过受控配置启动 MySQL、RabbitMQ、Redis、应用、Prometheus 和 Grafana，并形成可以重复执行、可以安全停止、可以升级、可以回滚、可以排错的部署闭环。
 - **当前基线**：
   - Week 6 Day 3 已在本地提交 `6f0c284`，历史完整回归为 378/378；当前 `main` 比 `origin/main` 领先 1 个提交。Day 4 开始前必须重新核对本地提交、远端分支和真实 CI，不把本地未推送状态描述为已发布版本。
@@ -1991,17 +1991,18 @@
   10. 记录一次真实排错过程，至少覆盖“容器不健康 → 查看 Compose 状态 → 有限日志 → 配置/端口/依赖定位 → 修复 → smoke”的证据链；不为了制造记录修改业务代码或执行 Day 6 故障演练。
   11. 清理本地一次性凭据和临时验收数据，但保留服务器部署、命名卷和必要运行账号；核对公网监听端口、服务器环境文件权限、GitHub/Registry 权限、敏感信息、范围和 `git diff --check`。
 - **任务**：
-  - [ ] 新增 `docs/design/week6-day4-linux-deployment-design.md`，记录主机事实、镜像发布、目录/权限、端口、配置、启停、升级、回滚、失败路径和验收矩阵。
-  - [ ] 扩展 GitHub Actions，在完整测试和镜像审计成功后把应用镜像以完整 Git SHA 推送到私有 GHCR，并记录真实 digest 与 run 链接。
-  - [ ] 新增 Linux 专用 Compose 文件，使用远端不可变镜像，取消 MySQL/RabbitMQ/Redis 宿主机端口并保持应用、Prometheus、Grafana 仅回环监听。
-  - [ ] 新增服务器环境变量示例和 Linux 部署脚本，覆盖配置校验、拉取、启动、查看状态、有限日志、安全停止、升级和回滚；脚本不得删除卷或打印秘密。
+  - [x] 新增 `docs/design/week6-day4-linux-deployment-design.md`，记录主机事实、镜像发布、目录/权限、端口、配置、启停、升级、回滚、失败路径和验收矩阵。
+  - [x] 扩展 GitHub Actions，在完整测试和镜像审计成功后把应用镜像以完整 Git SHA 推送到私有 GHCR，并记录真实 digest 与 run 链接。
+  - [x] 新增 Linux 专用 Compose 文件，使用远端不可变镜像，取消 MySQL/RabbitMQ/Redis 宿主机端口并保持应用、Prometheus、Grafana 仅回环监听。
+  - [x] 新增服务器环境变量示例和 Linux 部署脚本，覆盖配置校验、拉取、启动、查看状态、白名单服务有限日志、安全停止、升级和回滚；脚本不得删除卷、无限跟随日志或打印环境秘密。
   - [ ] 在授权 Linux 主机完成 Docker/Compose、时间、资源、磁盘、防火墙、端口和部署用户权限检查，并保存不含主机秘密的基线证据。
   - [ ] 生成并安全保存生产型随机凭据，完成初始 ADMIN/REVIEWER Bootstrap 后立即关闭 Bootstrap；确认仓库、镜像、日志和文档无明文凭据。
-  - [ ] 从指定 SHA 镜像启动六服务，确认全部 healthy、Flyway V10、命名卷、非 root 应用和日志轮转真实生效。
+  - [x] 在隔离本地 Linux Engine 和 GitHub-hosted Ubuntu 上从指定 SHA 镜像启动六服务，确认全部 healthy、Flyway V10、5 个命名卷、非 root 应用和日志轮转生效；持久主机仍需重复验证。
   - [ ] 通过 SSH 隧道完成真实 OpenAPI、JWT/RBAC、CSV 导入、对账、审核、审计、统计、Prometheus target 和 Grafana 仪表盘验收。
   - [ ] 完成一次保留数据卷的安全停止/再启动，以及两个已验收 SHA 之间的升级和回滚；每一步均通过 smoke 且数据/监控历史不丢失。
-  - [ ] 新增 `docs/review/week6-day4-linux-deployment-acceptance.md`，记录命令、时间、镜像 SHA/digest、服务状态、HTTP/业务/监控结果、监听端口、回滚和排错证据，主机/IP/用户名/凭据必须脱敏。
+  - [x] 新增 `docs/review/week6-day4-linux-deployment-acceptance.md`，记录命令、时间、镜像 SHA/digest、服务状态、HTTP/业务/监控结果、监听端口、回滚和排错证据，且明确区分临时 runner 与待授权主机。
   - [ ] 运行完整本地回归和部署配置检查，核对远端真实 CI/镜像发布结果，并完成服务器临时数据清理、敏感信息、权限、范围和 `git diff --check` 审计。
+- **当前验收结论**：本地 378/378、六服务业务/监控闭环、保留卷停机恢复、actionlint、ShellCheck 和 `git diff --check` 已通过。GitHub-hosted run `31474425853` 成功发布 `8b29433cf76bfcf66633c665188578670ddb924e`（digest `sha256:9adec42f2f5f85db110ec1c49bf327c0c8001e5ebd254dcd92423ed9cd487a96`），并在 Ubuntu 24.04.4 上完成 `8b29433 → ce74fa4 → 8b29433`、四轮状态检查和 5 个卷保持。当前工作站未发现授权服务器入口或凭据，无法继续完成主机防火墙/SSH 隧道、600 权限生产环境文件、一次性 Bootstrap、持久主机业务验收和最终清理，因此不得把 Day 4 标记为已完成。
 - **关键文件**：
   - `docs/design/week6-day4-linux-deployment-design.md`
   - `docs/review/week6-day4-linux-deployment-acceptance.md`
@@ -2010,6 +2011,7 @@
   - `.env.linux.example`
   - `scripts/linux/deploy.sh`
   - `scripts/linux/status.sh`
+  - `scripts/linux/logs.sh`
   - `scripts/linux/stop.sh`
   - `scripts/linux/rollback.sh`
   - `README.md`

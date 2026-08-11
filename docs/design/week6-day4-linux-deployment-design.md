@@ -49,6 +49,8 @@ publish-image（needs: test-package-image）
   → 检查非 root、Java 17、源码/Maven缺失、source/revision 标签
   → 使用 GITHUB_TOKEN 登录 GHCR
   → 推送并记录 registry digest
+  → 在隔离 Ubuntu runner 部署、停机恢复，并在前序 SHA 可用时回滚/再升级
+  → 无论成功或失败都只清理 runner 内专属 project、卷和登录状态
 ```
 
 Pull Request、非 `main` 分支和测试失败均不得发布。发布 job 单独申请 `packages: write`，测试 job 保持 `contents: read`。不创建 `latest`、`main` 等可漂移部署标签。
@@ -117,6 +119,7 @@ Pull Request、非 `main` 分支和测试失败均不得发布。发布 job 单�
 | `preflight.sh` | 系统/资源/时间/Docker/端口/防火墙提示、环境权限和 Compose 检查 | 安装软件、修改防火墙、打印秘密 |
 | `deploy.sh` | 校验完整 SHA、临时 GHCR 登录、pull、`up --wait`、记录成功镜像 | build、删除卷、修改业务数据 |
 | `status.sh` | Compose 状态、health/OpenAPI、Prometheus/Grafana、target UP | 输出环境变量、修改容器 |
+| `logs.sh` | 按白名单服务读取最近 1～999 行无颜色日志，默认 app/100 行 | 无限跟随、同时倾倒全部服务、修改容器 |
 | `stop.sh` | 30 秒优雅停止且保留全部资源 | `down`、`down -v`、卷删除 |
 | `rollback.sh` | 原子修改环境文件中的应用镜像并调用 deploy | 数据库迁移回滚、卷恢复 |
 
