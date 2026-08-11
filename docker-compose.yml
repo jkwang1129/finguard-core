@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: "${FINGUARD_APP_IMAGE:-finguard-core:local}"
-    container_name: finguard-app
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-app"
     restart: unless-stopped
 
     depends_on:
@@ -81,9 +81,78 @@ services:
 
     stop_grace_period: 30s
 
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-prometheus"
+    restart: unless-stopped
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:9090/-/healthy
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+    stop_grace_period: 30s
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-grafana"
+    restart: unless-stopped
+
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/etc/grafana/dashboards:ro
+
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:3000/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+    stop_grace_period: 30s
+
   mysql:
     image: mysql:8.4.10
-    container_name: finguard-mysql
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-mysql"
     restart: unless-stopped
 
     environment:
@@ -117,7 +186,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.3.4-management
-    container_name: finguard-rabbitmq
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-rabbitmq"
     restart: unless-stopped
 
     environment:
@@ -146,7 +215,7 @@ services:
 
   redis:
     image: redis:8.2.8-alpine
-    container_name: finguard-redis
+    container_name: "${FINGUARD_CONTAINER_PREFIX:-finguard}-redis"
     restart: unless-stopped
 
     environment:
@@ -178,6 +247,8 @@ services:
     stop_grace_period: 30s
 
 volumes:
+  grafana_data:
   mysql_data:
+  prometheus_data:
   rabbitmq_data_v4:
   redis_data_v1:

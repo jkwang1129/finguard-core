@@ -12,7 +12,9 @@ import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
 import com.finguard.core.messaging.consumer.failure.ConsumerRetryPolicy;
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
+import com.finguard.core.observability.FinGuardMetrics;
 import com.rabbitmq.client.Channel;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,9 @@ class AsyncImportProcessorIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @MockitoSpyBean
     private ImportRowErrorMapper importRowErrorMapper;
@@ -314,6 +319,7 @@ class AsyncImportProcessorIntegrationTest {
     @Test
     void shouldCommitOnceWhenAckFailsAndDeliveryReturns()
             throws Exception {
+        double metricBefore = importSuccessCount();
         ImportJobResponse accepted = accept(
                 "ack-loss.csv",
                 row(accountNo, "ACK-LOSS", "31.00")
@@ -321,7 +327,8 @@ class AsyncImportProcessorIntegrationTest {
         ImportJobMessageListener listener = new ImportJobMessageListener(
                 new ImportJobMessageHandler(transactionService),
                 new ConsumerRetryPolicy(),
-                mock(ReliableConsumerForwarder.class)
+                mock(ReliableConsumerForwarder.class),
+                mock(com.finguard.core.observability.FinGuardMetrics.class)
         );
         JobRequestedMessage message = requestedMessage(accepted.id());
         Channel failedChannel = mock(Channel.class);
@@ -345,6 +352,7 @@ class AsyncImportProcessorIntegrationTest {
                 Integer.class,
                 accepted.id()
         )).isEqualTo(1);
+        assertThat(importSuccessCount()).isEqualTo(metricBefore + 1.0);
 
         Channel recoveredChannel = mock(Channel.class);
         listener.onMessage(
@@ -365,6 +373,15 @@ class AsyncImportProcessorIntegrationTest {
                 Integer.class,
                 accepted.id()
         )).isZero();
+        assertThat(importSuccessCount()).isEqualTo(metricBefore + 1.0);
+    }
+
+    private double importSuccessCount() {
+        io.micrometer.core.instrument.Counter counter = meterRegistry
+                .find(FinGuardMetrics.IMPORT_COMPLETED)
+                .tag("outcome", "success")
+                .counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     private ImportJobResponse accept(String fileName, String... rows) {

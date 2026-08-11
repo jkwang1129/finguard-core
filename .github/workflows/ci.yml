@@ -31,6 +31,7 @@ jobs:
       RABBITMQ_MANAGEMENT_PORT: "15672"
       REDIS_PASSWORD: finguard-ci-redis-password
       REDIS_PORT: "6379"
+      GRAFANA_ADMIN_PASSWORD: finguard-ci-grafana-password
       JWT_SECRET_BASE64: ZmluZ3VhcmQtZGF5My10ZXN0LW9ubHktc2VjcmV0LWtleQ==
 
     steps:
@@ -46,6 +47,18 @@ jobs:
 
       - name: Start test dependencies
         run: docker compose up -d --wait --wait-timeout 120 mysql rabbitmq redis
+
+      - name: Validate observability configuration
+        run: |
+          docker compose config --quiet
+          docker run --rm \
+            --volume "${PWD}/ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            --entrypoint /bin/promtool \
+            prom/prometheus:v3.7.3 \
+            check config /etc/prometheus/prometheus.yml
+          jq --exit-status \
+            '.uid == "finguard-overview" and (.panels | length >= 9)' \
+            ops/grafana/dashboards/finguard-overview.json
 
       - name: Test and package
         run: mvn -B -ntp clean package

@@ -3,8 +3,11 @@ package com.finguard.core.messaging.consumer.reconciliation;
 import com.finguard.core.messaging.consumer.exception.InvalidJobRequestedMessageException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.observability.FinGuardMetrics;
+import com.finguard.core.observability.ReconciliationMetricOutcome;
 import com.finguard.core.reconciliation.model.ReconciliationProcessingResult;
 import com.finguard.core.reconciliation.service.impl.ReconciliationJobTransactionService;
+import io.micrometer.core.instrument.Timer;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
@@ -14,6 +17,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -22,18 +26,61 @@ class ReconciliationJobMessageHandlerTest {
 
     private final ReconciliationJobTransactionService transactionService =
             mock(ReconciliationJobTransactionService.class);
+    private final FinGuardMetrics metrics = mock(FinGuardMetrics.class);
+    private final Timer.Sample sample = mock(Timer.Sample.class);
     private final ReconciliationJobMessageHandler handler =
-            new ReconciliationJobMessageHandler(transactionService);
+            new ReconciliationJobMessageHandler(
+                    transactionService,
+                    metrics
+            );
 
     @Test
     void shouldProcessValidatedReconciliationMessage() {
         JobRequestedMessage message = validMessage();
         when(transactionService.processPending(42L))
                 .thenReturn(ReconciliationProcessingResult.PROCESSED);
+        when(metrics.startReconciliationProcessing()).thenReturn(sample);
 
         assertThat(handler.handle(message))
                 .isEqualTo(ReconciliationProcessingResult.PROCESSED);
         verify(transactionService).processPending(42L);
+        verify(metrics).recordReconciliationProcessing(
+                sample,
+                ReconciliationMetricOutcome.COMPLETED
+        );
+    }
+
+    @Test
+    void shouldNotRecordTimerForAlreadyCompletedMessage() {
+        JobRequestedMessage message = validMessage();
+        when(transactionService.processPending(42L))
+                .thenReturn(ReconciliationProcessingResult.ALREADY_COMPLETED);
+        when(metrics.startReconciliationProcessing()).thenReturn(sample);
+
+        assertThat(handler.handle(message))
+                .isEqualTo(ReconciliationProcessingResult.ALREADY_COMPLETED);
+        verify(metrics, never()).recordReconciliationProcessing(
+                sample,
+                ReconciliationMetricOutcome.COMPLETED
+        );
+        verify(metrics, never()).recordReconciliationProcessing(
+                sample,
+                ReconciliationMetricOutcome.FAILED
+        );
+    }
+
+    @Test
+    void shouldRecordFailedTimerAndRethrowBusinessFailure() {
+        JobRequestedMessage message = validMessage();
+        RuntimeException failure = new RuntimeException("expected failure");
+        when(transactionService.processPending(42L)).thenThrow(failure);
+        when(metrics.startReconciliationProcessing()).thenReturn(sample);
+
+        assertThatThrownBy(() -> handler.handle(message)).isSameAs(failure);
+        verify(metrics).recordReconciliationProcessing(
+                sample,
+                ReconciliationMetricOutcome.FAILED
+        );
     }
 
     @Test

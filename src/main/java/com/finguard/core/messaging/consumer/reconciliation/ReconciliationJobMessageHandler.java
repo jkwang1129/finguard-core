@@ -3,8 +3,11 @@ package com.finguard.core.messaging.consumer.reconciliation;
 import com.finguard.core.messaging.consumer.exception.InvalidJobRequestedMessageException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.observability.FinGuardMetrics;
+import com.finguard.core.observability.ReconciliationMetricOutcome;
 import com.finguard.core.reconciliation.model.ReconciliationProcessingResult;
 import com.finguard.core.reconciliation.service.impl.ReconciliationJobTransactionService;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Service;
 
 import java.util.regex.Pattern;
@@ -17,16 +20,38 @@ public class ReconciliationJobMessageHandler {
             Pattern.compile("outbox-[1-9][0-9]*");
 
     private final ReconciliationJobTransactionService transactionService;
+    private final FinGuardMetrics metrics;
 
     public ReconciliationJobMessageHandler(
-            ReconciliationJobTransactionService transactionService) {
+            ReconciliationJobTransactionService transactionService,
+            FinGuardMetrics metrics) {
         this.transactionService = transactionService;
+        this.metrics = metrics;
     }
 
     public ReconciliationProcessingResult handle(
             JobRequestedMessage message) {
         validate(message);
-        return transactionService.processPending(message.aggregateId());
+        Timer.Sample sample = metrics.startReconciliationProcessing();
+        try {
+            ReconciliationProcessingResult result =
+                    transactionService.processPending(
+                            message.aggregateId()
+                    );
+            if (result != ReconciliationProcessingResult.ALREADY_COMPLETED) {
+                metrics.recordReconciliationProcessing(
+                        sample,
+                        ReconciliationMetricOutcome.COMPLETED
+                );
+            }
+            return result;
+        } catch (RuntimeException exception) {
+            metrics.recordReconciliationProcessing(
+                    sample,
+                    ReconciliationMetricOutcome.FAILED
+            );
+            throw exception;
+        }
     }
 
     public boolean markRetryExhausted(Long reconciliationJobId) {

@@ -314,10 +314,14 @@ class AsyncReconciliationProcessorIntegrationTest {
         ReconciliationJobMessageListener listener =
                 new ReconciliationJobMessageListener(
                         new ReconciliationJobMessageHandler(
-                                transactionService
+                                transactionService,
+                                mock(com.finguard.core.observability
+                                        .FinGuardMetrics.class)
                         ),
                         new ConsumerRetryPolicy(),
-                        mock(ReliableConsumerForwarder.class)
+                        mock(ReliableConsumerForwarder.class),
+                        mock(com.finguard.core.observability
+                                .FinGuardMetrics.class)
                 );
         JobRequestedMessage message = new JobRequestedMessage(
                 "outbox-9301",

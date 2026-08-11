@@ -24,9 +24,11 @@ import com.finguard.core.messaging.outbox.entity.OutboxEvent;
 import com.finguard.core.messaging.outbox.mapper.OutboxEventMapper;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
 import com.finguard.core.messaging.outbox.model.OutboxStatus;
+import com.finguard.core.observability.ImportJobTerminalEvent;
 import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import com.finguard.core.transaction.entity.Transaction;
 import com.finguard.core.transaction.mapper.TransactionMapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionStatus;
@@ -60,6 +62,7 @@ public class ImportJobTransactionService {
     private final CsvImportRowValidator rowValidator;
     private final AuditLogService auditLogService;
     private final StatisticsChangePublisher statisticsChangePublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final Clock businessClock;
 
     public ImportJobTransactionService(
@@ -72,6 +75,7 @@ public class ImportJobTransactionService {
             CsvImportRowValidator rowValidator,
             AuditLogService auditLogService,
             StatisticsChangePublisher statisticsChangePublisher,
+            ApplicationEventPublisher applicationEventPublisher,
             Clock businessClock) {
         this.importJobMapper = importJobMapper;
         this.importJobFileMapper = importJobFileMapper;
@@ -82,6 +86,7 @@ public class ImportJobTransactionService {
         this.rowValidator = rowValidator;
         this.auditLogService = auditLogService;
         this.statisticsChangePublisher = statisticsChangePublisher;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.businessClock = businessClock;
     }
 
@@ -249,6 +254,9 @@ public class ImportJobTransactionService {
                     importJob.getCreatedBy()
             );
         }
+        applicationEventPublisher.publishEvent(
+                new ImportJobTerminalEvent(status)
+        );
         statisticsChangePublisher.publish();
     }
 
@@ -271,6 +279,9 @@ public class ImportJobTransactionService {
                 importJobId,
                 failed.getCreatedBy()
         );
+        applicationEventPublisher.publishEvent(
+                new ImportJobTerminalEvent(ImportJobStatus.FAILED)
+        );
         statisticsChangePublisher.publish();
     }
 
@@ -291,6 +302,9 @@ public class ImportJobTransactionService {
             auditLogService.recordImportFailed(
                     importJobId,
                     failed.getCreatedBy()
+            );
+            applicationEventPublisher.publishEvent(
+                    new ImportJobTerminalEvent(ImportJobStatus.FAILED)
             );
             statisticsChangePublisher.publish();
             return true;
@@ -476,6 +490,9 @@ public class ImportJobTransactionService {
         );
         requireSingleStateUpdate(updated, importJobId);
         auditLogService.recordImportFailed(importJobId, initiatedBy);
+        applicationEventPublisher.publishEvent(
+                new ImportJobTerminalEvent(ImportJobStatus.FAILED)
+        );
         statisticsChangePublisher.publish();
     }
 

@@ -42,6 +42,7 @@
 | Week 5 Day 7 | 已完成 | Week 5 综合验收、并发/幂等/故障证据、清理和周复盘完成；完整回归 366/366 |
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
 | Week 6 Day 2 | 已完成 | 应用镜像、四服务 Compose、本地空卷验收与真实 GitHub-hosted CI 全部通过 |
+| Week 6 Day 3 | 已完成 | 三类低基数业务指标、六服务监控栈、Grafana 9 面板和独立真实验收完成；完整回归 378/378 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1852,6 +1853,86 @@
 - **常见错误预防**：不要把 `.env`、JWT 或密码 `COPY` 进镜像；不要在容器内继续连接 `127.0.0.1` 查找外部依赖；不要只写 `depends_on` 而忽略健康状态；不要用 root 运行应用；不要使用 `latest`；不要把宿主机 `target` 当作唯一镜像输入；不要在 CI 只执行 `-DskipTests package`；不要未经远端实跑就宣称 Actions 成功；不要用 `docker compose down -v` 删除用户原有数据来完成验收。
 - **回滚**：删除 Day 2 新增的 Docker/CI/设计文件，移除 Compose 应用服务，恢复本日的配置与 README 改动；只删除明确属于 Day 2 验收且可重建的容器、网络、临时卷和镜像，不删除现有开发卷，不修改 V1～V10，也不回退 Day 1 OpenAPI 或 Week 1～Week 5 业务能力。
 - **提交建议**：`build: containerize application and add CI image build`
+
+### Week 6 Day 3：Micrometer 业务指标、Prometheus 与 Grafana
+
+- **状态**：已完成
+- **业务目标**：把当前只能通过接口、日志和数据库逐项排查的 FinGuard Core，升级为可持续采集、可查询、可视化的最小可观测系统；既能观察 HTTP、JVM 和数据库连接池等运行状态，也能用稳定业务指标回答“导入是否成功、对账是否变慢、消息失败是否增加”，为 Day 5 压测优化和 Day 6 故障演练提供同一套证据来源。
+- **当前基线**：
+  - Week 6 Day 2 已完成应用镜像、四服务 Compose 和真实 GitHub-hosted CI；功能提交为 `97fd641`，托管验收记录提交为 `5f5062f`，历史完整回归为 370/370。本日必须重新实跑并记录新数字，不能复制历史结论。
+  - `spring-boot-starter-actuator` 已存在，但当前只暴露 `/actuator/health`；仓库没有 Prometheus Registry、自定义 `Meter`、`/actuator/prometheus`、Prometheus/Grafana 服务、采集配置或仪表盘。
+  - Compose 当前包含应用、MySQL、RabbitMQ 和 Redis，应用端口只绑定宿主机 `127.0.0.1`；Flyway 最新版本为 V10，本日不新增迁移或业务表。
+- **目标观测流**：
+
+  ```text
+  HTTP 请求 / JVM / HikariCP / 导入 / 对账 / 消息消费
+    → Micrometer 生成低基数时间序列
+    → 应用仅暴露 health 与 prometheus 两个 Actuator 端点
+    → Prometheus 在 Compose 内网定时抓取 app:8080/actuator/prometheus
+    → Grafana 自动装载 Prometheus 数据源和 FinGuard 仪表盘
+    → 使用真实业务请求与故障样例验证指标变化和图表可解释性
+  ```
+
+- **范围边界**：
+  - 本日只完成 Micrometer Prometheus Registry、三个核心业务指标、Prometheus 抓取、Grafana 数据源/仪表盘自动配置、Compose/README 配套、自动化测试和真实监控闭环验收。
+  - 保留 Actuator 最小暴露面：只新增 `prometheus`，不公开 `env`、`beans`、`configprops`、`heapdump`、`threaddump` 等端点；Prometheus/Grafana 的宿主机端口只绑定 `127.0.0.1`，Day 4 再决定 Linux 防火墙、反向代理和远程访问方式。
+  - 不新增告警平台、Alertmanager、OpenTelemetry、Collector、Tracing、ELK/Loki、业务管理页面或 Kubernetes 监控；不把 `/api/statistics/overview` 改造成 Prometheus 抓取接口。
+  - 不发布镜像、不做真实 Linux 部署、不运行 JMeter、不做性能优化、不形成安全报告或故障复盘；这些分别属于 Day 4～Day 6。
+  - 不修改 V1～V10，不新增业务 API、业务状态或数据库表，不改变 JWT/RBAC、导入、对账、重试/DLQ、审核、审计和 Redis 的既有语义。
+- **指标契约**：
+  - 复用 Spring Boot/Micrometer 的 `http.server.requests`、JVM 和 HikariCP 指标；只为 HTTP 请求和对账 Timer 启用可聚合直方图及明确桶边界，用 PromQL `histogram_quantile` 计算 P95。Grafana 展示请求吞吐/错误率/P95 延迟、JVM 内存和数据库连接池使用情况，面板查询排除 Actuator 自身抓取流量。
+  - 新增导入终态 Counter，Prometheus 形态为 `finguard_import_jobs_completed_total{outcome=...}`；`outcome` 只允许 `success`、`partial_success`、`failed`。只有新的任务终态实际提交后才加一，重复投递命中 `ALREADY_COMPLETED` 不重复计数。
+  - 新增对账处理 Timer，Prometheus 形态为 `finguard_reconciliation_processing_seconds_*{outcome=...}`；只记录真实处理或恢复执行，不把终态幂等空操作算成一次新对账，仪表盘展示次数、平均耗时和 P95。
+  - 新增消息消费失败 Counter，Prometheus 形态为 `finguard_messaging_consumer_failures_total{flow=...,reason=...}`；它表示“被分类的失败处理次数”而不是唯一消息数，`flow/reason` 只能取代码内有限枚举值。
+  - 指标标签禁止使用用户 ID、任务 ID、交易 ID、消息 ID、文件名、用户名、JWT、异常文本或 URL 原始值；业务指标与数据库当前状态的统计接口职责分离，应用重启后的累计历史由 Prometheus 保存，不通过启动时全表扫描伪造 Counter。
+- **执行顺序**：
+  1. 复核 `PROJECT_BRIEF.md`、Day 1/Day 2 契约、Actuator/Security 配置、导入/对账终态与 RabbitMQ 失败路径，新增 Day 3 设计文档并锁定指标语义、记录时点、标签集合和 Day 4～Day 6 边界。
+  2. 添加 Micrometer Prometheus Registry，配置只暴露 `health,prometheus`，并为 `GET /actuator/prometheus` 增加精确安全白名单；其他 Actuator 路径继续受保护且不暴露。
+  3. 建立集中式业务指标组件和有限枚举标签，在“事务已提交且确实发生新状态迁移”的边界记录导入终态；覆盖成功、部分成功、失败、恢复和重复消息，防止事务回滚或至少一次投递造成重复计数。
+  4. 在对账真实处理边界记录 Timer，在消费者异常分类边界记录消息失败 Counter；明确异常、重试、DLQ、转发失败和幂等空操作分别是否计数，不能为了面板好看吞掉原有异常或改变 ACK/NACK 行为。
+  5. 新增 Prometheus 配置与显式版本镜像，通过 Compose 内网抓取 `app:8080`；新增 Grafana 显式版本镜像、Prometheus 数据源 provisioning 和版本化仪表盘 JSON，不依赖浏览器手工配置。
+  6. 扩展 Compose、`.env.example` 和 README，说明六服务启动、端口、指标查询、仪表盘访问、凭据注入、日志、停止及保留/清理监控数据卷的区别；不得提交真实 Grafana 密码。
+  7. 增加指标单元/集成测试：验证名称、单位、描述、固定标签、提交后计数、回滚不计数、重复投递不重计、对账 Timer 和失败分类；验证匿名 Prometheus 端点可抓取，而未列入白名单的 Actuator 端点仍不可用。
+  8. 校验 Prometheus 配置和 Grafana dashboard/provisioning，运行聚焦测试、完整 `mvn clean test`、`docker compose config` 和应用镜像构建，确认新增依赖已进入最终镜像且镜像仍以非 root 用户运行。
+  9. 使用独立项目名和临时卷启动六服务，确认全部 healthy、Prometheus target 为 `UP`、Grafana 数据源可用且仪表盘自动出现；再用真实 JWT/HTTP/RabbitMQ 完成导入成功/失败、对账处理和消息失败样例，通过 Prometheus API 与 Grafana 面板核对指标增量。
+  10. 仅清理 Day 3 临时容器、网络、卷、测试数据、消息、凭据和端口，保留用户原有开发数据；执行敏感信息检查、Day 4～Day 7 范围审计、`git diff --check` 和最终工作区审查。
+- **任务**：
+  - [x] 新增 `docs/design/week6-day3-observability-design.md`，记录指标定义、记录时点、标签基数、抓取/展示链路、失败路径、测试矩阵和回滚边界。
+  - [x] 添加 Micrometer Prometheus Registry，精确暴露并放行 `/actuator/prometheus`，保持其他 Actuator 端点不暴露。
+  - [x] 实现导入终态 Counter，证明提交后只计一次且重复消息、回滚和终态空操作不会重复计数。
+  - [x] 实现对账处理 Timer，覆盖成功/失败结果并排除 `ALREADY_COMPLETED` 空操作。
+  - [x] 实现消息消费失败 Counter，以有限 `flow/reason` 标签区分导入/对账和稳定失败分类。
+  - [x] 新增 Prometheus 服务与抓取配置，确认应用 target 持续为 `UP`。
+  - [x] 新增 Grafana 服务、Prometheus 数据源 provisioning 和版本化 FinGuard 仪表盘。
+  - [x] 仪表盘至少展示 HTTP 吞吐/错误率/P95、JVM 内存、HikariCP 连接池、导入成功/失败数、对账次数/耗时和消息失败数。
+  - [x] 更新 `.env.example`、Compose 和 README，补齐监控端口、Grafana 凭据、启动、访问、查询、日志、停止和数据卷说明。
+  - [x] 新增指标与安全聚焦测试，运行完整回归、Compose/Prometheus/Grafana 配置校验和镜像构建。
+  - [x] 在独立六服务环境完成真实业务/故障指标验收，并保存可复核的 Prometheus 查询和 Grafana 面板证据。
+  - [x] 清理临时资源，完成敏感信息、标签基数、范围、镜像内容和 `git diff --check` 审计。
+- **关键文件**：
+  - `docs/design/week6-day3-observability-design.md`
+  - `TASKS.md`
+  - `pom.xml`
+  - `src/main/resources/application.yml`
+  - `src/main/java/com/finguard/core/auth/config/SecurityConfiguration.java`
+  - `src/main/java/com/finguard/core/observability/**`
+  - `src/main/java/com/finguard/core/importjob/**`
+  - `src/main/java/com/finguard/core/reconciliation/**`
+  - `src/main/java/com/finguard/core/messaging/consumer/**`
+  - `src/test/java/com/finguard/core/observability/**`
+  - `docker-compose.yml`
+  - `ops/prometheus/prometheus.yml`
+  - `ops/grafana/provisioning/**`
+  - `ops/grafana/dashboards/finguard-overview.json`
+  - `docs/review/week6-day3-acceptance.md`
+  - `.env.example`
+  - `README.md`
+- **验收标准**：聚焦测试和完整 `mvn clean test` 全绿且无跳过；只有 `health,prometheus` 两个 Actuator 端点暴露，指标中不含敏感信息或高基数标签；六服务全部 healthy，Prometheus target 为 `UP`，Grafana 数据源和仪表盘无需手工操作即可装载；真实业务与失败样例能使导入、对账和消息指标按契约精确增量，HTTP/JVM/HikariCP 面板有真实数据；应用重启后 Prometheus 历史仍可查询；临时资源清理、原有数据保护、敏感信息检查、Day 4～Day 7 范围审计和 `git diff --check` 全部通过。
+- **验收结论**：最终指标/安全聚焦测试 10/10、完整 `mvn -B -ntp clean test` 378/378 通过，均为 0 failures、0 errors、0 skipped。Compose、Prometheus `promtool`、Grafana 9 个唯一面板和 actionlint 1.7.12 校验通过；应用镜像约 161.01 MiB，以 UID/GID 10001 的 `finguard` 用户运行 Java 17.0.19，镜像内无 Maven 和源码。独立空卷六服务全部 healthy，Flyway 为 V10；真实 JWT/HTTP 完成导入 `SUCCESS`、无效账户导入 `FAILED` 和对账 `COMPLETED`，MQ 非法流向进入稳定失败分类。Prometheus 观测到导入 Counter=2、对账 Timer count=1、消息失败 Counter=1，HTTP/JVM/HikariCP 序列存在；Grafana 数据源 URL 正确且自动装载 9 面板，应用重启后 Prometheus 历史仍可查询。匿名 `/actuator/env` 为 401、认证后为 404；验收容器、网络、5 个临时卷和一次性凭据已清理，原开发容器和数据未改动。完整证据见 `docs/review/week6-day3-acceptance.md`。
+- **学习重点**：Metric/Counter/Timer/Gauge 的区别，Micrometer MeterRegistry 与 Prometheus 拉取模型，Counter 重启语义与 PromQL `rate/increase`，Timer 的 count/sum/max/分位查询，HTTP/JVM/HikariCP 自动指标，事务提交与指标一致性，至少一次投递下的去重计数，标签基数，Prometheus target 与 Grafana datasource/dashboard provisioning。
+- **常见错误预防**：不要把数据库总数直接塞进 Counter；不要用任务 ID、消息 ID、文件名或异常消息做标签；不要在事务提交前计数；不要让重复投递重复增加业务完成数；不要把失败尝试数写成“唯一失败消息数”；不要公开全部 Actuator；不要把 Grafana 密码写进仓库；不要用 `latest` 镜像或依赖手工点选配置；不要把 Prometheus 自身抓取流量算进业务 HTTP 面板；不要为了制造图表数据改变原有 ACK、重试或业务状态语义。
+- **回滚**：移除 Day 3 新增的 Registry、指标组件/接入点、Prometheus/Grafana 服务、配置、仪表盘、测试和文档，恢复 Actuator 暴露与安全白名单；只删除明确属于 Day 3 验收的监控容器、网络和临时卷，不删除用户原有 MySQL/RabbitMQ/Redis 数据卷，不修改 V1～V10，也不回退 Day 1/Day 2 或 Week 1～Week 5 能力。
+- **提交建议**：`feat: add application observability stack`
 
 ## 9. 后续路线
 

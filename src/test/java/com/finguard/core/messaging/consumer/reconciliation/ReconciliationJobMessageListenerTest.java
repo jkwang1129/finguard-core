@@ -8,6 +8,7 @@ import com.finguard.core.messaging.consumer.failure.ConsumerRoute;
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.observability.FinGuardMetrics;
 import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
 import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
 import com.finguard.core.reconciliation.model.ReconciliationProcessingResult;
@@ -35,11 +36,13 @@ class ReconciliationJobMessageListenerTest {
     private final ReliableConsumerForwarder forwarder =
             mock(ReliableConsumerForwarder.class);
     private final Channel channel = mock(Channel.class);
+    private final FinGuardMetrics metrics = mock(FinGuardMetrics.class);
     private final ReconciliationJobMessageListener listener =
             new ReconciliationJobMessageListener(
                     handler,
                     new ConsumerRetryPolicy(),
-                    forwarder
+                    forwarder,
+                    metrics
             );
 
     @Test
@@ -125,6 +128,11 @@ class ReconciliationJobMessageListenerTest {
         listener.onMessage(message, amqpMessage(null), channel, 36L);
 
         verify(handler).markBusinessFailed(42L);
+        verify(metrics).recordConsumerFailure(
+                com.finguard.core.messaging.consumer.failure
+                        .ConsumerFlow.RECONCILIATION,
+                ConsumerFailureCode.BUSINESS_FAILED
+        );
         verify(channel).basicAck(36L, false);
         verify(forwarder, never()).forward(any(), any(), any());
     }

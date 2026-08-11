@@ -11,6 +11,7 @@ import com.finguard.core.messaging.consumer.failure.ConsumerRoute;
 import com.finguard.core.messaging.consumer.failure.InvalidRetryAttemptException;
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
+import com.finguard.core.observability.FinGuardMetrics;
 import com.finguard.core.reconciliation.exception.InvalidReconciliationOperationException;
 import com.finguard.core.reconciliation.exception.ReconciliationJobNotFoundException;
 import com.rabbitmq.client.Channel;
@@ -28,14 +29,17 @@ public class ReconciliationJobMessageListener {
     private final ReconciliationJobMessageHandler handler;
     private final ConsumerRetryPolicy retryPolicy;
     private final ReliableConsumerForwarder forwarder;
+    private final FinGuardMetrics metrics;
 
     public ReconciliationJobMessageListener(
             ReconciliationJobMessageHandler handler,
             ConsumerRetryPolicy retryPolicy,
-            ReliableConsumerForwarder forwarder) {
+            ReliableConsumerForwarder forwarder,
+            FinGuardMetrics metrics) {
         this.handler = handler;
         this.retryPolicy = retryPolicy;
         this.forwarder = forwarder;
+        this.metrics = metrics;
     }
 
     @RabbitListener(
@@ -99,6 +103,10 @@ public class ReconciliationJobMessageListener {
             );
         } catch (InvalidReconciliationOperationException exception) {
             handler.markBusinessFailed(message.aggregateId());
+            metrics.recordConsumerFailure(
+                    ConsumerFlow.RECONCILIATION,
+                    ConsumerFailureCode.BUSINESS_FAILED
+            );
             channel.basicAck(deliveryTag, false);
         } catch (RuntimeException exception) {
             handleTransientFailure(
@@ -145,6 +153,10 @@ public class ReconciliationJobMessageListener {
             ConsumerFailureCode failureCode,
             Channel channel,
             long deliveryTag) throws IOException {
+        metrics.recordConsumerFailure(
+                ConsumerFlow.RECONCILIATION,
+                failureCode
+        );
         ConsumerForwardResult result = forwarder.forward(
                 message,
                 route,

@@ -10,6 +10,7 @@ import com.finguard.core.messaging.consumer.failure.ConsumerRoute;
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
 import com.finguard.core.messaging.outbox.model.OutboxEventType;
+import com.finguard.core.observability.FinGuardMetrics;
 import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -33,11 +34,13 @@ class ImportJobMessageListenerTest {
     private final ReliableConsumerForwarder forwarder =
             mock(ReliableConsumerForwarder.class);
     private final Channel channel = mock(Channel.class);
+    private final FinGuardMetrics metrics = mock(FinGuardMetrics.class);
     private final ImportJobMessageListener listener =
             new ImportJobMessageListener(
                     handler,
                     new ConsumerRetryPolicy(),
-                    forwarder
+                    forwarder,
+                    metrics
             );
 
     @Test
@@ -77,6 +80,11 @@ class ImportJobMessageListenerTest {
                         0
                 )),
                 eq(ConsumerFailureCode.TRANSIENT_FAILURE)
+        );
+        verify(metrics).recordConsumerFailure(
+                com.finguard.core.messaging.consumer.failure
+                        .ConsumerFlow.IMPORT,
+                ConsumerFailureCode.TRANSIENT_FAILURE
         );
         InOrder order = inOrder(forwarder, channel);
         order.verify(forwarder).forward(any(), any(), any());

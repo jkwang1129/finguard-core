@@ -91,10 +91,22 @@ finguard:
       expires-in-seconds: 7200
 
 management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   endpoint:
     health:
       show-details: never
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        finguard.reconciliation.processing: true
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
+        finguard.reconciliation.processing: 100ms,250ms,500ms,1s,2s,5s,10s,30s

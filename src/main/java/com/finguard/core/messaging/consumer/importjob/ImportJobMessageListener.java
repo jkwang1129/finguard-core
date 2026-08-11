@@ -12,6 +12,7 @@ import com.finguard.core.messaging.consumer.failure.InvalidRetryAttemptException
 import com.finguard.core.messaging.consumer.failure.ReliableConsumerForwarder;
 import com.finguard.core.importjob.exception.ImportJobNotFoundException;
 import com.finguard.core.messaging.outbox.message.JobRequestedMessage;
+import com.finguard.core.observability.FinGuardMetrics;
 import com.rabbitmq.client.Channel;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -27,14 +28,17 @@ public class ImportJobMessageListener {
     private final ImportJobMessageHandler handler;
     private final ConsumerRetryPolicy retryPolicy;
     private final ReliableConsumerForwarder forwarder;
+    private final FinGuardMetrics metrics;
 
     public ImportJobMessageListener(
             ImportJobMessageHandler handler,
             ConsumerRetryPolicy retryPolicy,
-            ReliableConsumerForwarder forwarder) {
+            ReliableConsumerForwarder forwarder,
+            FinGuardMetrics metrics) {
         this.handler = handler;
         this.retryPolicy = retryPolicy;
         this.forwarder = forwarder;
+        this.metrics = metrics;
     }
 
     @RabbitListener(
@@ -131,6 +135,10 @@ public class ImportJobMessageListener {
             ConsumerFailureCode failureCode,
             Channel channel,
             long deliveryTag) throws IOException {
+        metrics.recordConsumerFailure(
+                ConsumerFlow.IMPORT,
+                failureCode
+        );
         ConsumerForwardResult result = forwarder.forward(
                 message,
                 route,

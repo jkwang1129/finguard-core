@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 6 Day 2 已完成：Java 17 非 root 应用镜像、四服务 Compose、运行时配置注入和 CI workflow 已实现。本地与 GitHub-hosted `mvn clean package` 均为 370/370；空卷环境的 Flyway V1～V10、四服务健康、OpenAPI、JWT/RBAC、应用重启和资源清理均已验证。首次真实 GitHub Actions `push` 运行已完成测试、打包、镜像构建、镜像断言和资源清理：[run 31366242428](https://github.com/jkwang1129/finguard-core/actions/runs/31366242428)。
+当前进度为 Week 6 Day 3 已完成：应用已提供提交后导入终态 Counter、对账处理 Timer 和稳定分类的消息失败 Counter；Prometheus 与 Grafana 已通过 Compose 自动启动、采集和装载 9 面板仪表盘。完整自动化回归为 378/378；独立空卷环境的 Flyway V1～V10、六服务健康、真实 JWT/HTTP/MQ 指标增量、Actuator 最小暴露和应用重启后的 Prometheus 历史均已验证。Day 2 的首次真实 GitHub Actions `push` 运行记录仍见 [run 31366242428](https://github.com/jkwang1129/finguard-core/actions/runs/31366242428)。
 
 ## 当前技术基线
 
@@ -11,6 +11,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - Spring Boot 3.5.16
 - Spring MVC
 - Spring Boot Actuator
+- Micrometer Prometheus Registry
+- Prometheus 3.7.3
+- Grafana 12.3.1
 - Springdoc OpenAPI 2.8.17 / Swagger UI
 - Spring Security
 - OAuth2 Resource Server / JWT
@@ -69,7 +72,9 @@ FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自
 - `GET /api/statistics/overview` 聚合导入、对账、风险与审核状态，以显式 JSON 缓存到固定 Redis key 60 秒；ADMIN/REVIEWER 可查，事务成功提交后失效，Redis 异常时回源 MySQL；
 - 登录按 remote address 摘要与规范化用户名摘要限制为 5 次/300 秒，成功签发 JWT 后清除当前窗口；CSV 上传按已验签 userId 限制为 10 次/60 秒；
 - 两类限流共用 Lua 原子 `INCR + PEXPIRE + PTTL`，超限统一返回 `429 RATE_LIMIT_EXCEEDED + Retry-After`，Redis 异常时 fail-open；
-- 370 个自动化测试，以及真实 MySQL、RabbitMQ、Redis、JWT、HTTP、OpenAPI/Swagger、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、缓存失效、限流、乐观锁并发和应用健康验收。
+- 提交后且去重的导入终态 Counter、对账处理 Timer 和有限 `flow/reason` 标签的消息失败 Counter；
+- Prometheus 自动抓取 HTTP/JVM/HikariCP/业务指标，Grafana 自动配置数据源和 9 面板 FinGuard 仪表盘；
+- 378 个自动化测试，以及真实 MySQL、RabbitMQ、Redis、JWT、HTTP、OpenAPI/Swagger、分页、认证、RBAC、事务、索引、两级延迟重试、DLQ、风险生成、审核决策、审计一致性、缓存失效、限流、乐观锁并发、监控采集和应用健康验收。
 
 ## 本地运行
 
@@ -92,7 +97,7 @@ docker compose version
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中设置仅供本机使用的 MySQL、RabbitMQ 和 Redis 密码。`.env` 已被 Git 忽略，不要提交真实密码。示例中的 `replace-with-*` 只能作为提示，不能直接用于真实环境。
+然后在 `.env` 中设置仅供本机使用的 MySQL、RabbitMQ、Redis 和 Grafana 密码。`.env` 已被 Git 忽略，不要提交真实密码。示例中的 `replace-with-*` 只能作为提示，不能直接用于真实环境。
 
 应用启动还需要一个 Base64 编码、解码后不少于 32 字节的 JWT 密钥。可以只在当前 PowerShell 会话中生成：
 
@@ -134,14 +139,14 @@ mvn spring-boot:run
 
 #### 方式 B：完整 Compose
 
-先确认当前 PowerShell 中已经设置 `JWT_SECRET_BASE64`，然后构建并启动应用与三个依赖：
+先确认当前 PowerShell 中已经设置 `JWT_SECRET_BASE64`，且 `.env` 已填写 Grafana 密码，然后构建并启动应用、三个依赖和两个监控服务：
 
 ```powershell
 docker compose up -d --build --wait
 docker compose ps
 ```
 
-预期 `app`、`mysql`、`rabbitmq` 和 `redis` 四个服务都显示为 `healthy`。应用容器通过 Compose 服务名连接依赖，默认只在本机 `127.0.0.1:8080` 暴露 HTTP。
+预期 `app`、`mysql`、`rabbitmq`、`redis`、`prometheus` 和 `grafana` 六个服务都显示为 `healthy`。应用容器通过 Compose 服务名连接依赖；应用、Prometheus 和 Grafana 默认分别只在本机 `127.0.0.1:8080`、`127.0.0.1:9090` 和 `127.0.0.1:3000` 暴露端口。
 
 单独构建应用镜像：
 
@@ -149,20 +154,21 @@ docker compose ps
 docker compose build app
 ```
 
-查看应用日志或重启应用：
+查看应用/监控日志或重启应用：
 
 ```powershell
 docker compose logs --tail=200 app
+docker compose logs --tail=200 prometheus grafana
 docker compose restart app
 ```
 
-停止容器但保留 MySQL、RabbitMQ 和 Redis 数据卷：
+停止容器但保留 MySQL、RabbitMQ、Redis、Prometheus 和 Grafana 数据卷：
 
 ```powershell
 docker compose down
 ```
 
-`docker compose down -v` 会删除三个命名数据卷及其中数据，不属于日常停止操作；只有确认数据可丢弃时才能执行。
+`docker compose down -v` 会删除五个命名数据卷及其中数据，不属于日常停止操作；只有确认数据可丢弃时才能执行。
 
 ### 4. 验证应用
 
@@ -187,6 +193,38 @@ GET http://localhost:8080/swagger-ui/index.html
 
 Swagger UI 可以匿名打开；先调用登录接口取得 JWT，再使用右上角 `Authorize` 配置 Bearer Token。文档端点公开不代表业务端点公开，实际读写权限仍由 Spring Security 的 ADMIN/REVIEWER RBAC 控制。
 
+### 5. 验证监控
+
+Prometheus 抓取端点允许匿名读取，但 Actuator 仍只暴露 `health` 和 `prometheus`；`env`、`beans`、`heapdump` 等敏感端点没有暴露。应用端口默认只绑定本机回环地址。
+
+```text
+GET http://localhost:8080/actuator/prometheus
+GET http://localhost:9090/-/healthy
+GET http://localhost:9090/api/v1/targets
+GET http://localhost:3000/api/health
+```
+
+打开 `http://localhost:3000`，使用 `.env` 中的 `GRAFANA_ADMIN_USER` 和 `GRAFANA_ADMIN_PASSWORD` 登录。Prometheus 数据源和 `FinGuard / FinGuard Core Overview` 仪表盘会通过仓库中的 provisioning 文件自动创建，不需要在页面中手工添加。
+
+仪表盘包括：
+
+- Prometheus target 状态；
+- HTTP 吞吐、5xx 错误率和 P95 延迟；
+- JVM 内存与 HikariCP 连接池；
+- CSV 导入成功、部分成功和失败数；
+- 对账处理次数和 P95；
+- 导入/对账消息消费失败次数。
+
+三个自定义业务指标为：
+
+```text
+finguard_import_jobs_completed_total{outcome="success|partial_success|failed"}
+finguard_reconciliation_processing_seconds_*{outcome="completed|failed"}
+finguard_messaging_consumer_failures_total{flow="import|reconciliation",reason="..."}
+```
+
+导入 Counter 只在新终态事务提交后增加，重复消息不会重复增加。消息失败 Counter 表示失败处理尝试次数，不表示唯一失败消息数。指标标签不会使用用户 ID、任务 ID、交易 ID、消息 ID、文件名、用户名、JWT 或异常文本。
+
 ## 持续集成
 
 `.github/workflows/ci.yml` 在 `push`、`pull_request` 和手动触发时执行：
@@ -207,7 +245,7 @@ Swagger UI 可以匿名打开；先调用登录接口取得 JWT，再使用右�
 POST   /api/auth/login
 ```
 
-登录和健康检查允许匿名访问。其余账户、交易接口必须携带合法的 Bearer Token。
+登录、健康检查、Prometheus 指标和 OpenAPI 文档允许匿名访问。其余业务接口必须携带合法的 Bearer Token。
 
 连续失败登录按 remote address 与规范化用户名的摘要组合计数，默认第 6 次返回 `429 + Retry-After`；成功登录会清除当前组合的计数。Redis 故障时认证继续执行，但故障期间限流暂时失效。
 
