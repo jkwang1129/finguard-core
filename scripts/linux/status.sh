@@ -38,10 +38,17 @@ check_endpoint openapi "http://127.0.0.1:${app_port}/v3/api-docs"
 check_endpoint prometheus-health "http://127.0.0.1:${prometheus_port}/-/healthy"
 check_endpoint grafana-health "http://127.0.0.1:${grafana_port}/api/health"
 
-target_status=$(curl --silent --show-error \
-  "http://127.0.0.1:${prometheus_port}/api/v1/targets" \
-  | grep -o '"health":"up"' \
-  | head -n 1 || true)
+target_status=
+target_attempt=1
+while [ "${target_attempt}" -le 15 ]; do
+  target_status=$(curl --silent --show-error \
+    "http://127.0.0.1:${prometheus_port}/api/v1/targets" \
+    | grep -o '"health":"up"' \
+    | head -n 1 || true)
+  [ "${target_status}" != '"health":"up"' ] || break
+  sleep 2
+  target_attempt=$((target_attempt + 1))
+done
 [ "${target_status}" = '"health":"up"' ] \
-  || die "Prometheus does not report an UP target"
+  || die "Prometheus does not report an UP target after 30 seconds"
 printf 'prometheus-target: UP\n'

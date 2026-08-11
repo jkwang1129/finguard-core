@@ -68,6 +68,8 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 
 ## 5. 排错记录
 
+### 5.1 运维客户端缺少 curl
+
 本地首次从最小 Docker CLI 容器调用 `status.sh` 时，脚本按预期失败并报告 `required command is unavailable: curl`。按以下链路定位：
 
 1. `docker compose ps` 确认六服务仍为 healthy；
@@ -76,6 +78,18 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 4. 重新执行 status，四个 HTTP endpoint 和 Prometheus target 全部通过。
 
 该结果证明缺少运维客户端依赖时会快速失败且不会改变运行栈。真实持久主机接入后，仍需记录至少一次该主机上的排错链路。
+
+### 5.2 Prometheus 首次抓取竞态
+
+第二个 SHA `ce74fa420ab4e0d64d0a0f286fab9d959228edbf` 已通过 378/378、镜像审计并发布，digest 为 `sha256:d2a37e693e7d19189cce902d97cbd0eba4a67a76c036813b504d520595e135e2`，但托管 run [`31473542233`](https://github.com/jkwang1129/finguard-core/actions/runs/31473542233) 的部署生命周期失败，不能作为绿色验收：
+
+1. Compose 已报告六服务 healthy，application/OpenAPI/Prometheus/Grafana endpoint 均为 HTTP 200；
+2. 紧接着读取 Prometheus targets 时，首次抓取尚未完成，target 暂时不是 UP；
+3. `status.sh` 原实现只查询一次，立即以 `Prometheus does not report an UP target` 退出；
+4. 失败诊断输出了六服务有限日志，`always()` 清理仍完整移除隔离容器、网络和 5 个卷；
+5. 修复为在 endpoint 健康后最多等待 30 秒、每 2 秒查询一次 target，超时仍失败，避免把固定 sleep 当作成功条件。
+
+修复必须由后续真实 hosted run 证明，失败 run 本身不计为回滚验收。
 
 ## 6. 待授权主机补证
 
