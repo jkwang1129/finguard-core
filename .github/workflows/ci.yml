@@ -51,6 +51,14 @@ jobs:
       - name: Validate observability configuration
         run: |
           docker compose config --quiet
+          FINGUARD_APP_IMAGE="ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_SHA}" \
+            docker compose \
+              --env-file .env.linux.example \
+              --file compose.linux.yml \
+              config --quiet
+          for script in scripts/linux/*.sh; do
+            sh -n "${script}"
+          done
           docker run --rm \
             --volume "${PWD}/ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
             --entrypoint /bin/promtool \
@@ -81,3 +89,134 @@ jobs:
       - name: Stop test dependencies
         if: always()
         run: docker compose down --remove-orphans
+
+  publish-image:
+    name: Publish immutable application image
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    needs: test-package-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@v7
+
+      - name: Build immutable image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        run: |
+          docker build \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${IMAGE_NAME}" \
+            .
+
+      - name: Inspect immutable image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE_NAME}")" = "finguard"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "${IMAGE_NAME}")" = "https://github.com/${GITHUB_REPOSITORY}"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_NAME}")" = "${GITHUB_SHA}"
+          docker run --rm --entrypoint java "${IMAGE_NAME}" -version 2>&1 | grep '17\.'
+          docker run --rm --entrypoint sh "${IMAGE_NAME}" -c 'test ! -e /opt/finguard/pom.xml && ! command -v mvn'
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Push immutable image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        run: |
+          set -o pipefail
+          docker push "${IMAGE_NAME}" | tee push-output.txt
+          digest="$(awk '/digest:/ {print $3}' push-output.txt | tail -n 1)"
+          test -n "${digest}"
+          printf 'Published %s@%s\n' "${IMAGE_NAME}" "${digest}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Exercise Linux deployment lifecycle
+        env:
+          CURRENT_IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          PREVIOUS_IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.before }}
+        run: |
+          cp .env.linux.example .env.linux
+          sed -i \
+            -e "s|^FINGUARD_APP_IMAGE=.*|FINGUARD_APP_IMAGE=${CURRENT_IMAGE}|" \
+            -e 's|^FINGUARD_PROJECT_NAME=.*|FINGUARD_PROJECT_NAME=finguard-ci-deploy|' \
+            -e 's|replace-with-strong-random-root-password|finguard-ci-root-password|' \
+            -e 's|replace-with-strong-random-app-password|finguard-ci-app-password|' \
+            -e 's|replace-with-strong-random-rabbit-password|finguard-ci-rabbit-password|' \
+            -e 's|replace-with-strong-random-redis-password|finguard-ci-redis-password|' \
+            -e 's|replace-with-base64-encoded-random-32-byte-secret|ZmluZ3VhcmQtY2ktZGVwbG95bWVudC10ZXN0LW9ubHkta2V5|' \
+            -e 's|replace-with-strong-random-grafana-password|finguard-ci-grafana-password|' \
+            .env.linux
+          chmod 600 .env.linux
+
+          sh scripts/linux/preflight.sh
+          sh scripts/linux/deploy.sh
+          sh scripts/linux/status.sh
+
+          volume_count="$(docker volume ls \
+            --filter label=com.docker.compose.project=finguard-ci-deploy \
+            --quiet | wc -l | tr -d ' ')"
+          test "${volume_count}" = "5"
+
+          sh scripts/linux/stop.sh
+          sh scripts/linux/deploy.sh
+          sh scripts/linux/status.sh
+
+          zero_sha=0000000000000000000000000000000000000000
+          previous_sha="${PREVIOUS_IMAGE##*:}"
+          if [ "${previous_sha}" != "${zero_sha}" ] \
+            && docker manifest inspect "${PREVIOUS_IMAGE}" >/dev/null 2>&1; then
+            sh scripts/linux/rollback.sh "${PREVIOUS_IMAGE}"
+            sh scripts/linux/status.sh
+            sed -i "s|^FINGUARD_APP_IMAGE=.*|FINGUARD_APP_IMAGE=${CURRENT_IMAGE}|" .env.linux
+            sh scripts/linux/deploy.sh
+            sh scripts/linux/status.sh
+            test "$(cat .deploy-state/current-image)" = "${CURRENT_IMAGE}"
+            test "$(cat .deploy-state/previous-image)" = "${PREVIOUS_IMAGE}"
+            printf 'Verified %s -> %s -> %s with preserved volumes.\n' \
+              "${CURRENT_IMAGE}" "${PREVIOUS_IMAGE}" "${CURRENT_IMAGE}" \
+              >> "${GITHUB_STEP_SUMMARY}"
+          else
+            printf 'No previously published SHA image was available for rollback validation.\n' \
+              >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Show deployment diagnostics
+        if: failure()
+        run: |
+          if [ -f .env.linux ]; then
+            docker compose \
+              --project-name finguard-ci-deploy \
+              --env-file .env.linux \
+              --file compose.linux.yml \
+              ps --all
+            docker compose \
+              --project-name finguard-ci-deploy \
+              --env-file .env.linux \
+              --file compose.linux.yml \
+              logs --no-color --tail=100
+          fi
+
+      - name: Remove deployment acceptance resources
+        if: always()
+        run: |
+          if [ -f .env.linux ]; then
+            docker compose \
+              --project-name finguard-ci-deploy \
+              --env-file .env.linux \
+              --file compose.linux.yml \
+              down --volumes --remove-orphans
+          fi
+
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io || true

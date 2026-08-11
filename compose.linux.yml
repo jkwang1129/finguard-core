@@ -1,0 +1,200 @@
+name: "${FINGUARD_PROJECT_NAME:-finguard}"
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    image: "${FINGUARD_APP_IMAGE:?FINGUARD_APP_IMAGE must be an immutable GHCR SHA image}"
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-finguard}"
+      MYSQL_USER: "${MYSQL_USER:-finguard}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: "${RABBITMQ_USERNAME:-finguard}"
+      RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}"
+      RABBITMQ_VIRTUAL_HOST: "${RABBITMQ_VIRTUAL_HOST:-/}"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      JWT_SECRET_BASE64: "${JWT_SECRET_BASE64:?JWT_SECRET_BASE64 is required}"
+      FINGUARD_REDIS_CONNECT_TIMEOUT: "${FINGUARD_REDIS_CONNECT_TIMEOUT:-1s}"
+      FINGUARD_REDIS_COMMAND_TIMEOUT: "${FINGUARD_REDIS_COMMAND_TIMEOUT:-1s}"
+      FINGUARD_STATISTICS_CACHE_TTL: "${FINGUARD_STATISTICS_CACHE_TTL:-60s}"
+      FINGUARD_RATE_LIMIT_LOGIN_LIMIT: "${FINGUARD_RATE_LIMIT_LOGIN_LIMIT:-5}"
+      FINGUARD_RATE_LIMIT_LOGIN_WINDOW: "${FINGUARD_RATE_LIMIT_LOGIN_WINDOW:-300s}"
+      FINGUARD_RATE_LIMIT_UPLOAD_LIMIT: "${FINGUARD_RATE_LIMIT_UPLOAD_LIMIT:-10}"
+      FINGUARD_RATE_LIMIT_UPLOAD_WINDOW: "${FINGUARD_RATE_LIMIT_UPLOAD_WINDOW:-60s}"
+      FINGUARD_IMPORT_CONSUMER_ENABLED: "${FINGUARD_IMPORT_CONSUMER_ENABLED:-true}"
+      FINGUARD_IMPORT_CONSUMER_CONCURRENCY: "${FINGUARD_IMPORT_CONSUMER_CONCURRENCY:-1}"
+      FINGUARD_IMPORT_CONSUMER_PREFETCH: "${FINGUARD_IMPORT_CONSUMER_PREFETCH:-1}"
+      FINGUARD_RECONCILIATION_CONSUMER_ENABLED: "${FINGUARD_RECONCILIATION_CONSUMER_ENABLED:-true}"
+      FINGUARD_RECONCILIATION_CONSUMER_CONCURRENCY: "${FINGUARD_RECONCILIATION_CONSUMER_CONCURRENCY:-1}"
+      FINGUARD_RECONCILIATION_CONSUMER_PREFETCH: "${FINGUARD_RECONCILIATION_CONSUMER_PREFETCH:-1}"
+      FINGUARD_CONSUMER_FORWARD_CONFIRM_TIMEOUT: "${FINGUARD_CONSUMER_FORWARD_CONFIRM_TIMEOUT:-5s}"
+      FINGUARD_OUTBOX_ENABLED: "${FINGUARD_OUTBOX_ENABLED:-true}"
+      FINGUARD_OUTBOX_FIXED_DELAY_MS: "${FINGUARD_OUTBOX_FIXED_DELAY_MS:-1000}"
+      FINGUARD_OUTBOX_BATCH_SIZE: "${FINGUARD_OUTBOX_BATCH_SIZE:-50}"
+      FINGUARD_OUTBOX_CONFIRM_TIMEOUT: "${FINGUARD_OUTBOX_CONFIRM_TIMEOUT:-5s}"
+      FINGUARD_RISK_LARGE_AMOUNT_ENABLED: "${FINGUARD_RISK_LARGE_AMOUNT_ENABLED:-true}"
+      FINGUARD_RISK_LARGE_AMOUNT_THRESHOLD: "${FINGUARD_RISK_LARGE_AMOUNT_THRESHOLD:-10000.00}"
+      FINGUARD_RISK_POSSIBLE_DUPLICATE_ENABLED: "${FINGUARD_RISK_POSSIBLE_DUPLICATE_ENABLED:-true}"
+      FINGUARD_RISK_POSSIBLE_DUPLICATE_WINDOW: "${FINGUARD_RISK_POSSIBLE_DUPLICATE_WINDOW:-5m}"
+      FINGUARD_RISK_FREQUENT_TRANSACTION_ENABLED: "${FINGUARD_RISK_FREQUENT_TRANSACTION_ENABLED:-true}"
+      FINGUARD_RISK_FREQUENT_TRANSACTION_WINDOW: "${FINGUARD_RISK_FREQUENT_TRANSACTION_WINDOW:-10m}"
+      FINGUARD_RISK_FREQUENT_TRANSACTION_THRESHOLD_COUNT: "${FINGUARD_RISK_FREQUENT_TRANSACTION_THRESHOLD_COUNT:-5}"
+      FINGUARD_AUTH_BOOTSTRAP_ENABLED: "${FINGUARD_AUTH_BOOTSTRAP_ENABLED:-false}"
+      FINGUARD_AUTH_BOOTSTRAP_ADMIN_USERNAME: "${FINGUARD_AUTH_BOOTSTRAP_ADMIN_USERNAME:-}"
+      FINGUARD_AUTH_BOOTSTRAP_ADMIN_PASSWORD: "${FINGUARD_AUTH_BOOTSTRAP_ADMIN_PASSWORD:-}"
+      FINGUARD_AUTH_BOOTSTRAP_REVIEWER_USERNAME: "${FINGUARD_AUTH_BOOTSTRAP_REVIEWER_USERNAME:-}"
+      FINGUARD_AUTH_BOOTSTRAP_REVIEWER_PASSWORD: "${FINGUARD_AUTH_BOOTSTRAP_REVIEWER_PASSWORD:-}"
+    ports:
+      - "127.0.0.1:${FINGUARD_APP_PORT:-8080}:8080"
+    mem_limit: "${FINGUARD_APP_MEMORY_LIMIT:-768m}"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --output-document=/dev/null
+        - http://127.0.0.1:8080/actuator/health
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, http://127.0.0.1:9090/-/healthy]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/etc/grafana/dashboards:ro
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, http://127.0.0.1:3000/api/health]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  mysql:
+    image: mysql:8.4.10
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-finguard}"
+      MYSQL_USER: "${MYSQL_USER:-finguard}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USERNAME:-finguard}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}"
+      RABBITMQ_DEFAULT_VHOST: "${RABBITMQ_VIRTUAL_HOST:-/}"
+      TZ: Asia/Shanghai
+    volumes:
+      - rabbitmq_data_v4:/var/lib/rabbitmq
+    healthcheck:
+      test: [CMD-SHELL, rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  redis:
+    image: redis:8.2.8-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      TZ: Asia/Shanghai
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        exec redis-server --appendonly yes
+        --requirepass "$${REDIS_PASSWORD}"
+    volumes:
+      - redis_data_v1:/data
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+volumes:
+  grafana_data:
+  mysql_data:
+  prometheus_data:
+  rabbitmq_data_v4:
+  redis_data_v1:

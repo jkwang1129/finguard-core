@@ -225,6 +225,118 @@ finguard_messaging_consumer_failures_total{flow="import|reconciliation",reason="
 
 导入 Counter 只在新终态事务提交后增加，重复消息不会重复增加。消息失败 Counter 表示失败处理尝试次数，不表示唯一失败消息数。指标标签不会使用用户 ID、任务 ID、交易 ID、消息 ID、文件名、用户名、JWT 或异常文本。
 
+## Linux 单机部署
+
+Linux 部署使用 [`compose.linux.yml`](compose.linux.yml)，不在服务器编译源码。GitHub Actions 只有在 `main` 的完整测试和镜像检查通过后，才发布：
+
+```text
+ghcr.io/jkwang1129/finguard-core:<完整 40 位 Git SHA>
+```
+
+不使用 `latest` 作为部署或回滚版本。应用镜像是私有 GHCR 包；服务器拉取凭据只需要 classic PAT 的 `read:packages`，不应使用仓库写权限或 GHCR 写权限 Token。
+
+### 1. 准备部署目录
+
+把以下版本化文件复制到授权 Linux 主机的固定目录：
+
+```text
+compose.linux.yml
+.env.linux.example
+ops/
+scripts/linux/
+```
+
+创建服务器私有环境文件：
+
+```bash
+cp .env.linux.example .env.linux
+chmod 600 .env.linux
+```
+
+编辑 `.env.linux`：
+
+- 把 `FINGUARD_APP_IMAGE` 改成已通过 CI 的完整 SHA 镜像；
+- 生成不同的 MySQL root/app、RabbitMQ、Redis 和 Grafana 强随机密码；
+- 生成随机 32 字节以上的 Base64 JWT 密钥；
+- 首次启动需要创建 ADMIN/REVIEWER 时，临时打开 Bootstrap 并填写强随机凭据。
+
+`.env.linux` 已被 Git 忽略。不要把文件内容、Registry Token 或真实主机信息复制到 Issue、Actions 日志、截图或验收文档。
+
+### 2. 主机预检
+
+目标 Linux 需要 Docker Engine、Docker Compose Plugin 和 `curl`。安装命令应按实际发行版使用 [Docker 官方说明](https://docs.docker.com/engine/install/)，不要混用不同发行版的软件源。
+
+```bash
+sh scripts/linux/preflight.sh
+```
+
+预检只读取 Linux/资源/时间/Docker/端口/防火墙提示和 Compose 配置，不安装软件、不修改防火墙、也不渲染环境变量值。若主机已有其他项目，先确认容器和端口归属。
+
+### 3. 拉取并启动
+
+先在安全会话中注入 GHCR 用户名和只读 Token，再启动：
+
+```bash
+export GHCR_USERNAME='<github-username>'
+export GHCR_TOKEN='<read-packages-token>'
+sh scripts/linux/deploy.sh
+unset GHCR_TOKEN
+sh scripts/linux/status.sh
+```
+
+不要把真实 Token 直接写进可保存的脚本或 shell history。提供 `GHCR_TOKEN` 时，部署脚本使用临时 Docker 配置登录，并在退出时删除该临时配置。
+
+六个服务必须全部 healthy。MySQL、RabbitMQ 和 Redis 不发布宿主机端口；应用、Prometheus 和 Grafana 只绑定 `127.0.0.1`。
+
+### 4. SSH 隧道访问
+
+客户端建立本地端口转发：
+
+```bash
+ssh \
+  -L 8080:127.0.0.1:8080 \
+  -L 9090:127.0.0.1:9090 \
+  -L 3000:127.0.0.1:3000 \
+  <authorized-host>
+```
+
+随后在客户端访问 `http://127.0.0.1:8080`、`9090` 和 `3000`。主机和云防火墙默认只批准 SSH，不直接开放 8080、9090、3000、3306、5672、6379 或 15672。
+
+### 5. 关闭首次 Bootstrap
+
+确认 ADMIN/REVIEWER 能登录后：
+
+1. 将 `FINGUARD_AUTH_BOOTSTRAP_ENABLED` 改为 `false`；
+2. 从 `.env.linux` 删除四项 Bootstrap 用户名/密码值；
+3. 重新执行 `deploy.sh` 和 `status.sh`；
+4. 确认登录仍成功，数据库只保存 BCrypt 哈希。
+
+### 6. 安全停止、升级和回滚
+
+保留卷的优雅停止：
+
+```bash
+sh scripts/linux/stop.sh
+```
+
+恢复或升级：把 `.env.linux` 的应用镜像改为另一个已验收完整 SHA，再执行：
+
+```bash
+sh scripts/linux/deploy.sh
+sh scripts/linux/status.sh
+```
+
+回滚到脚本记录的上一个成功镜像：
+
+```bash
+sh scripts/linux/rollback.sh
+sh scripts/linux/status.sh
+```
+
+也可把完整旧镜像作为 `rollback.sh` 的第一个参数。回滚只替换应用镜像，不回滚数据库；不得用 `docker compose down -v` 做停止、升级或回滚。
+
+完整的权限、失败路径和验收矩阵见 [`docs/design/week6-day4-linux-deployment-design.md`](docs/design/week6-day4-linux-deployment-design.md)。
+
 ## 持续集成
 
 `.github/workflows/ci.yml` 在 `push`、`pull_request` 和手动触发时执行：
@@ -235,7 +347,7 @@ finguard_messaging_consumer_failures_total{flow="import|reconciliation",reason="
 4. 构建应用 Docker 镜像；
 5. 检查镜像使用非 root 用户、Java 17 且不包含 Maven/源码。
 
-该 workflow 只负责 CI 验证，不推送镜像、不部署服务器，也不使用生产凭据。
+该 workflow 的测试 job 负责 CI 验证；只有 `main` 的 `push` 在测试成功后进入独立发布 job，将完整 Git SHA 镜像推送到私有 GHCR。workflow 不自动连接或部署服务器，也不使用服务器生产凭据。
 
 ## 当前接口
 

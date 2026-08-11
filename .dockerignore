@@ -3,6 +3,8 @@
 .idea
 .vscode
 .env
+.env*
+.deploy-state
 target
 docs
 scripts

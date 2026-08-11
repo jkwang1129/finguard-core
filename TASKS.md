@@ -43,6 +43,7 @@
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
 | Week 6 Day 2 | 已完成 | 应用镜像、四服务 Compose、本地空卷验收与真实 GitHub-hosted CI 全部通过 |
 | Week 6 Day 3 | 已完成 | 三类低基数业务指标、六服务监控栈、Grafana 9 面板和独立真实验收完成；完整回归 378/378 |
+| Week 6 Day 4 | 待执行 | 发布不可变应用镜像，并在真实 Linux 主机完成六服务部署、安全访问、启停、升级、回滚和排错记录 |
 
 ## 3. 阶段 0：工程基线
 
@@ -1933,6 +1934,91 @@
 - **常见错误预防**：不要把数据库总数直接塞进 Counter；不要用任务 ID、消息 ID、文件名或异常消息做标签；不要在事务提交前计数；不要让重复投递重复增加业务完成数；不要把失败尝试数写成“唯一失败消息数”；不要公开全部 Actuator；不要把 Grafana 密码写进仓库；不要用 `latest` 镜像或依赖手工点选配置；不要把 Prometheus 自身抓取流量算进业务 HTTP 面板；不要为了制造图表数据改变原有 ACK、重试或业务状态语义。
 - **回滚**：移除 Day 3 新增的 Registry、指标组件/接入点、Prometheus/Grafana 服务、配置、仪表盘、测试和文档，恢复 Actuator 暴露与安全白名单；只删除明确属于 Day 3 验收的监控容器、网络和临时卷，不删除用户原有 MySQL/RabbitMQ/Redis 数据卷，不修改 V1～V10，也不回退 Day 1/Day 2 或 Week 1～Week 5 能力。
 - **提交建议**：`feat: add application observability stack`
+
+### Week 6 Day 4：不可变镜像发布与真实 Linux 部署
+
+- **状态**：待执行
+- **业务目标**：把已经在本机和 GitHub-hosted CI 验证过的 FinGuard Core 六服务栈真正交付到一台用户授权的 Linux 主机；服务器只拉取与 Git 提交一一对应的应用镜像，通过受控配置启动 MySQL、RabbitMQ、Redis、应用、Prometheus 和 Grafana，并形成可以重复执行、可以安全停止、可以升级、可以回滚、可以排错的部署闭环。
+- **当前基线**：
+  - Week 6 Day 3 已在本地提交 `6f0c284`，历史完整回归为 378/378；当前 `main` 比 `origin/main` 领先 1 个提交。Day 4 开始前必须重新核对本地提交、远端分支和真实 CI，不把本地未推送状态描述为已发布版本。
+  - 当前 CI 只测试、打包和构建本地 runner 镜像，没有向镜像仓库推送；Compose 默认可从源码构建应用，也允许用 `FINGUARD_APP_IMAGE` 指定镜像。
+  - 当前六服务 Compose 已有健康检查、命名卷和 `unless-stopped`；应用、Prometheus、Grafana、RabbitMQ 和 Redis 端口默认绑定回环地址，但 MySQL 开发端口仍可绑定所有网卡，不能原样作为服务器暴露策略。
+  - 当前没有 Linux 生产 Compose 文件、镜像发布 workflow、部署脚本、服务器环境模板、SSH 隧道说明、升级/回滚步骤或真实 Linux 验收记录。
+  - Flyway 最新版本为 V10；本日不新增迁移、业务表或业务接口。
+- **执行前提与授权边界**：
+  - 使用一台由用户明确授权、可通过 SSH 管理的真实 Linux 主机；先记录发行版、CPU 架构、CPU/内存/磁盘、时区、内核、Docker Engine 和 Compose Plugin 版本，再决定是否满足六服务最低运行条件，不虚构云厂商、配置或公网地址。
+  - 若需要创建云主机、开放安全组、购买域名、改变仓库/镜像包可见性或写入服务器凭据，必须先取得用户明确授权；Day 4 不默认创建或付费购买外部资源。
+  - 默认发布到当前 GitHub 账户下的私有 GHCR 包，镜像名为 `ghcr.io/jkwang1129/finguard-core:<完整 Git SHA>`；发布 workflow 只授予 `contents: read` 和 `packages: write`，服务器拉取凭据只授予 `read:packages`。不使用 `latest` 作为部署或回滚依据，不改变现有私有仓库可见性。
+  - 真实密码、JWT 密钥、Registry Token 和主机信息只保存在 GitHub Secrets、服务器权限为 `600` 的环境文件或本机安全会话中，不进入仓库、镜像层、命令历史、验收文档或日志。
+- **目标交付流**：
+
+  ```text
+  推送已验收的 Git 提交
+    → GitHub Actions 在真实依赖上完成测试与打包
+    → 构建应用镜像并以完整 Git SHA 推送到私有 GHCR
+    → Linux 主机使用最小权限凭据拉取指定 SHA 镜像
+    → 生产 Compose 读取服务器私有环境文件并启动六服务
+    → Flyway V1→V10、全部健康检查和 Prometheus target 通过
+    → 经 SSH 隧道完成 OpenAPI、JWT/RBAC、业务闭环和 Grafana 验收
+    → 用另一个已验收 SHA 执行升级，再回滚到原 SHA
+    → 核对数据卷、数据库事实、监控历史、端口和资源未丢失
+  ```
+
+- **范围边界**：
+  - 本日只完成不可变镜像发布、Linux 主机基线、Docker/Compose 安装与权限检查、服务器专用 Compose/环境契约、首次部署、SSH 隧道、安全端口检查、启停、升级、应用镜像回滚、真实验收和排错记录。
+  - 不在服务器上运行 Maven 或从未固定的分支现场构建应用；部署只消费已经通过 CI 并以完整 Git SHA 标记的镜像，服务器配置与应用制品分离。
+  - 不把 MySQL 3306、RabbitMQ 5672/15672、Redis 6379、应用 8080、Prometheus 9090 或 Grafana 3000 直接暴露到公网；默认仅 SSH 端口由主机/云防火墙允许，应用与监控通过 SSH 本地端口转发访问。
+  - 不新增 Nginx、域名、TLS 证书、CDN、自动 CD、Kubernetes、Helm、Swarm、Vault、日志平台或多机高可用；若后续需要公开 HTTPS，另建独立里程碑，不在本日临时开放 HTTP 公网端口。
+  - 不运行 JMeter、不根据单次请求修改索引或并发参数；性能基线与优化属于 Day 5。安全报告、攻击性测试、依赖漏洞处置和至少三次故障演练属于 Day 6。
+  - 不修改 V1～V10，不新增业务 API、业务状态或数据库表，不改变 JWT/RBAC、消息 ACK/重试/DLQ、缓存/限流和指标语义。
+- **部署契约**：
+  - 新增独立的 Linux 部署 Compose 文件，应用只使用 `FINGUARD_APP_IMAGE` 指定的完整 SHA 镜像并禁止部署时构建；MySQL、RabbitMQ 和 Redis 不发布宿主机端口，应用、Prometheus 和 Grafana 只绑定 `127.0.0.1`。
+  - 六服务继续使用明确版本镜像、健康检查、命名卷、`restart: unless-stopped` 和停止宽限期；为容器日志设置有界轮转，防止长期运行耗尽磁盘。
+  - 服务器目录、Compose project name、卷名和环境文件位置固定；环境文件包含强随机数据库/MQ/Redis/Grafana 密码、至少 32 字节随机 JWT 密钥和精确应用镜像 SHA，文件权限必须为 `600`。
+  - 初始 ADMIN/REVIEWER 只通过已有安全 Bootstrap 能力创建：使用强随机一次性凭据完成首次启动，确认密码仅以 BCrypt 哈希入库后关闭 Bootstrap 并重建应用容器；不把明文凭据写入文档或镜像。
+  - 部署脚本必须默认失败即停止、检查必要变量和精确镜像引用，先拉取再启动，并在切换镜像前记录旧 SHA；停止脚本默认保留命名卷，任何 `down -v`、卷删除或数据库覆盖操作都不进入日常部署脚本。
+  - 回滚只切换应用镜像 SHA，不回滚数据库卷；本日 Flyway 保持 V10，因此需证明两个已验收镜像都兼容 V10。未来发生不可逆迁移时，必须另行设计数据库备份和前向修复，不能把镜像回滚等同于数据库回滚。
+- **执行顺序**：
+  1. 复核 `PROJECT_BRIEF.md`、Day 1～Day 3 契约、当前 Git/remote/CI、Compose、镜像构建、端口和敏感变量，新增 Day 4 设计文档并锁定发布、部署、升级、回滚和安全边界。
+  2. 连接授权 Linux 主机，记录系统和资源基线；确认时间同步、磁盘余量、SSH、公网防火墙、Docker Engine、Compose Plugin、Docker 服务状态和部署用户权限。若主机不是专用环境，先盘点现有容器、端口和数据，禁止影响不属于 FinGuard 的资源。
+  3. 扩展 GitHub Actions：只有完整测试、配置检查和镜像内容审计通过后，才允许在受控事件上登录 GHCR、构建并推送完整 Git SHA 标签；记录真实 package digest 和绿色 run 链接。
+  4. 新增 Linux 专用 Compose、环境模板和脚本，移除依赖服务宿主机端口，保留应用/监控回环绑定，加入日志轮转、固定 project name、配置校验、拉取、启动、状态、停止和回滚命令。
+  5. 在服务器生成真实随机凭据和 JWT 密钥，设置环境文件 `600` 权限，使用最小权限 GHCR 拉取凭据；执行 Compose 静态解析并确认渲染结果、进程参数和日志均不泄露秘密。
+  6. 首次拉取并启动六服务，等待全部 healthy；确认 Flyway 从空库执行 V1→V10、Docker 重启策略、命名卷、容器用户、内存/磁盘占用和有界日志配置符合契约。
+  7. 通过 SSH 隧道完成真实 health、OpenAPI/Swagger、ADMIN/REVIEWER JWT、匿名 `401`、越权 `403`、CSV 异步导入、自动对账、审核/统计/审计和 Prometheus/Grafana 验收；不在公网直接访问回环端口。
+  8. 执行安全停止与再启动，确认停止宽限期内应用正常退出、命名卷保留、再次启动后数据库事实、RabbitMQ/Redis 数据和 Prometheus/Grafana 数据仍可用。
+  9. 准备两个都通过 CI 且兼容 V10 的完整 SHA 镜像，执行 A→B 升级和 B→A 回滚；每次都等待健康并重跑最小 smoke，确认业务数据、监控历史和消息状态不丢失。
+  10. 记录一次真实排错过程，至少覆盖“容器不健康 → 查看 Compose 状态 → 有限日志 → 配置/端口/依赖定位 → 修复 → smoke”的证据链；不为了制造记录修改业务代码或执行 Day 6 故障演练。
+  11. 清理本地一次性凭据和临时验收数据，但保留服务器部署、命名卷和必要运行账号；核对公网监听端口、服务器环境文件权限、GitHub/Registry 权限、敏感信息、范围和 `git diff --check`。
+- **任务**：
+  - [ ] 新增 `docs/design/week6-day4-linux-deployment-design.md`，记录主机事实、镜像发布、目录/权限、端口、配置、启停、升级、回滚、失败路径和验收矩阵。
+  - [ ] 扩展 GitHub Actions，在完整测试和镜像审计成功后把应用镜像以完整 Git SHA 推送到私有 GHCR，并记录真实 digest 与 run 链接。
+  - [ ] 新增 Linux 专用 Compose 文件，使用远端不可变镜像，取消 MySQL/RabbitMQ/Redis 宿主机端口并保持应用、Prometheus、Grafana 仅回环监听。
+  - [ ] 新增服务器环境变量示例和 Linux 部署脚本，覆盖配置校验、拉取、启动、查看状态、有限日志、安全停止、升级和回滚；脚本不得删除卷或打印秘密。
+  - [ ] 在授权 Linux 主机完成 Docker/Compose、时间、资源、磁盘、防火墙、端口和部署用户权限检查，并保存不含主机秘密的基线证据。
+  - [ ] 生成并安全保存生产型随机凭据，完成初始 ADMIN/REVIEWER Bootstrap 后立即关闭 Bootstrap；确认仓库、镜像、日志和文档无明文凭据。
+  - [ ] 从指定 SHA 镜像启动六服务，确认全部 healthy、Flyway V10、命名卷、非 root 应用和日志轮转真实生效。
+  - [ ] 通过 SSH 隧道完成真实 OpenAPI、JWT/RBAC、CSV 导入、对账、审核、审计、统计、Prometheus target 和 Grafana 仪表盘验收。
+  - [ ] 完成一次保留数据卷的安全停止/再启动，以及两个已验收 SHA 之间的升级和回滚；每一步均通过 smoke 且数据/监控历史不丢失。
+  - [ ] 新增 `docs/review/week6-day4-linux-deployment-acceptance.md`，记录命令、时间、镜像 SHA/digest、服务状态、HTTP/业务/监控结果、监听端口、回滚和排错证据，主机/IP/用户名/凭据必须脱敏。
+  - [ ] 运行完整本地回归和部署配置检查，核对远端真实 CI/镜像发布结果，并完成服务器临时数据清理、敏感信息、权限、范围和 `git diff --check` 审计。
+- **关键文件**：
+  - `docs/design/week6-day4-linux-deployment-design.md`
+  - `docs/review/week6-day4-linux-deployment-acceptance.md`
+  - `.github/workflows/ci.yml`
+  - `compose.linux.yml`
+  - `.env.linux.example`
+  - `scripts/linux/deploy.sh`
+  - `scripts/linux/status.sh`
+  - `scripts/linux/stop.sh`
+  - `scripts/linux/rollback.sh`
+  - `README.md`
+  - `TASKS.md`
+- **验收标准**：本地完整 Maven 回归无失败和跳过，Linux Compose 静态配置可解析；真实 GitHub-hosted workflow 先测试再发布应用镜像，发布标签为完整 Git SHA且记录 digest；授权 Linux 主机能够仅凭版本化部署文件、服务器私有环境和指定镜像启动六服务，全部健康且 Flyway 为 V10；公网监听面只有经批准的 SSH，依赖服务不发布宿主机端口，应用与监控只通过 SSH 隧道访问；真实 JWT/RBAC/业务/监控 smoke 通过；安全停止/再启动、A→B 升级和 B→A 回滚均不删除卷、不丢失业务事实或 Prometheus/Grafana 历史；部署记录已脱敏，凭据权限、最小 GitHub/Registry 权限、排错证据、清理、范围审计和 `git diff --check` 全部通过。
+- **学习重点**：Linux 主机与容器边界、发行版/CPU/内存/磁盘基线、Docker Engine 与 Compose Plugin、镜像 tag 和 digest、不可变发布、GHCR 权限、SSH 隧道、主机/云防火墙、Linux 文件权限、环境注入、容器日志轮转、健康检查、优雅停止、命名卷、部署与升级、应用回滚和数据库回滚的区别、`ss`/`df`/`free`/`docker compose ps|logs|config` 排错链路。
+- **常见错误预防**：不要在服务器 `git pull` 后直接用漂移源码构建；不要部署 `latest`；不要在测试失败时仍发布镜像；不要把 GHCR 写权限 Token 留在服务器；不要把 MySQL、RabbitMQ、Redis、Actuator、Prometheus 或 Grafana 暴露公网；不要提交 `.env` 或在 `docker inspect`/日志/截图中泄露凭据；不要用 `depends_on` 代替健康验收；不要用 `docker compose down -v` 完成停止或回滚；不要只切 tag 不验证 digest；不要把镜像回滚宣传成数据库回滚；不要把 Day 5 压测或 Day 6 故障演练提前混入。
+- **回滚**：Day 4 功能变更可通过停用镜像发布 job、移除 Linux 专用 Compose/脚本/模板和文档恢复；服务器运行回滚只把 `FINGUARD_APP_IMAGE` 切回已验收的旧完整 SHA 并执行拉取/重建/健康检查，不删除命名卷，不修改 V1～V10。若需要彻底下线，只停止并移除容器/网络，卷是否删除必须另行取得明确授权并先确认备份；不得影响主机上的其他项目、容器、镜像或防火墙规则。
+- **提交建议**：`deploy: add immutable Linux deployment workflow`
 
 ## 9. 后续路线
 

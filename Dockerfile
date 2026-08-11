@@ -15,7 +15,8 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM eclipse-temurin:17-jre-ubi9-minimal AS runtime
 
 LABEL org.opencontainers.image.title="FinGuard Core" \
-      org.opencontainers.image.description="Transaction import, reconciliation, and exception review service"
+      org.opencontainers.image.description="Transaction import, reconciliation, and exception review service" \
+      org.opencontainers.image.source="https://github.com/jkwang1129/finguard-core"
 
 RUN useradd --uid 10001 \
         --user-group \
