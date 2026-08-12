@@ -1,15 +1,16 @@
 # Week 6 Day 4：Linux 部署验收记录
 
-日期：2026-08-11
+日期：2026-08-12
 
 ## 1. 结论与环境边界
 
-Day 4 的版本化交付物、不可变镜像发布和可重复部署链路已经实现，并在两类隔离 Linux 环境中完成了当前可执行的验证：
+Day 4 的版本化交付物、不可变镜像发布和可重复部署链路已经实现，并在隔离环境与一台经用户授权的持久 Alibaba Cloud ECS 上完成验证：
 
 - 本机 Docker Desktop Linux Engine：完成六服务业务与监控闭环、停机恢复和数据卷保持验证；
 - GitHub-hosted Ubuntu runner：完成真实 CI、私有 GHCR 发布、指定 SHA 拉取、六服务启动、状态检查、停机恢复和资源清理。
+- 持久 ECS：完成主机基线、SSH 隧道业务验收、Bootstrap 收口、保留卷生命周期和两个已发布 SHA 的升级/回滚。
 
-当前工作站未发现授权服务器地址、SSH 配置、服务器凭据或可用的常规 Linux WSL 发行版。因此，这两类环境都不能代替“用户授权的持久 Linux 主机 + SSH 隧道 + 主机/云防火墙”验收。本记录严格区分已验证事实和待补证事实，不把 Docker Desktop VM 或临时 CI runner 写成生产服务器。
+本记录严格区分已验证事实和待补证事实；服务器地址、账号、口令和 Token 不写入仓库。
 
 ## 2. 交付物检查
 
@@ -81,6 +82,16 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 
 同一组 5 个卷内依次完成：部署当前 SHA、保留卷停止/恢复、回滚到前一 SHA、再次升级到当前 SHA。四次状态门禁均确认 application/OpenAPI/Prometheus/Grafana 为 HTTP 200 且 Prometheus target 为 UP；最终 `.deploy-state/current-image` 为当前 SHA、`previous-image` 为回滚 SHA。失败诊断步骤未触发，`always()` 清理成功移除隔离 runner 的六个容器、网络和 5 个卷。
 
+### 4.2 持久 Alibaba Cloud ECS 验收
+
+主机为用户授权的 Ubuntu 22.04 LTS x86_64 ECS（2 vCPU、约 7.2 GiB 内存、40 GiB 根盘），Docker Engine 29.7.2、Compose v5.4.0，Asia/Shanghai 时钟同步，根盘使用率约 20%。`preflight.sh`、`status.sh` 和 `ss -lntp` 均通过；公网监听仅有 SSH，应用/Prometheus/Grafana 绑定 `127.0.0.1`，MySQL/RabbitMQ/Redis 无宿主机发布端口。主机 UFW 未启用，公网边界由云安全组承担，未开放业务端口。
+
+通过 SSH 本地转发访问 app、Prometheus、Grafana：health、OpenAPI 和三项监控状态均 HTTP 200，Prometheus target 为 UP。匿名业务接口返回 401；ADMIN/REVIEWER 登录成功，REVIEWER 读取账户 200、访问 ADMIN-only 审计接口 403；账户创建 201；CSV 导入 202→SUCCESS；对账 202→COMPLETED；统计和审计查询 200。验收后数据库事实为 1 个账户、1 个导入任务、1 个对账任务、2 条审计记录。
+
+首次启动使用一次性 Bootstrap 创建 ADMIN/REVIEWER，随后关闭 Bootstrap 并重建 app；服务器 `.env.linux` 权限为 600，远端临时 GHCR Token 已删除，仓库未保存任何明文凭据。
+
+持久主机五个命名卷保持不变。`stop.sh` 后五卷仍存在，再启动和状态检查通过。随后完成 `c825e75f1fe61f90ecc9f2feb27325cb50d1e9fb → 8b29433cf76bfcf66633c665188578670ddb924e → c825e75f1fe61f90ecc9f2feb27325cb50d1e9fb`，每次部署健康；最终 current-image 为当前 SHA、previous-image 为旧 SHA，业务/监控数据仍可读。
+
 ## 5. 排错记录
 
 ### 5.1 运维客户端缺少 curl
@@ -106,15 +117,6 @@ GitHub Actions run：[`31472588424`](https://github.com/jkwang1129/finguard-core
 
 修复已由绿色 hosted run `31474425853` 证明；失败 run 本身不计为回滚验收。
 
-## 6. 待授权主机补证
+## 6. 收尾与边界
 
-以下内容尚无授权目标，不能标记完成：
-
-- 持久 Linux 主机的发行版、资源、磁盘、部署用户、Docker 权限和现有工作负载盘点；
-- 主机防火墙与云安全组只允许经批准的 SSH，未授权网络不能直连业务/监控/依赖端口；
-- 服务器 `.env.linux` 的 600 权限和最小权限 `read:packages` 拉取凭据；
-- 一次性 ADMIN/REVIEWER Bootstrap、关闭并清除明文后仍可登录、数据库只保留 BCrypt；
-- 通过 SSH 隧道完成 JWT/RBAC、异步导入、对账、审核、审计、统计和监控验收；
-- 持久主机上的停止恢复、两个已发布 SHA 间升级/回滚及业务/监控历史保持。
-
-完成这些项目需要用户提供一台已授权、可 SSH 管理的 Linux 主机入口，以及通过安全会话注入的 GHCR `read:packages` 凭据；若涉及创建云资源、开放安全组或付费，必须另行授权。
+持久主机验收已完成。服务器继续保留 FinGuard 六服务和命名卷，便于后续 Day 5/Day 6 使用；Day 5 压测、Day 6 安全测试与故障演练不提前执行。服务器 IP、SSH 私钥、生产口令和 Registry Token 均不进入文档、镜像或 Git。

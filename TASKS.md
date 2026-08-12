@@ -1995,14 +1995,14 @@
   - [x] 扩展 GitHub Actions，在完整测试和镜像审计成功后把应用镜像以完整 Git SHA 推送到私有 GHCR，并记录真实 digest 与 run 链接。
   - [x] 新增 Linux 专用 Compose 文件，使用远端不可变镜像，取消 MySQL/RabbitMQ/Redis 宿主机端口并保持应用、Prometheus、Grafana 仅回环监听。
   - [x] 新增服务器环境变量示例和 Linux 部署脚本，覆盖配置校验、拉取、启动、查看状态、白名单服务有限日志、安全停止、升级和回滚；脚本不得删除卷、无限跟随日志或打印环境秘密。
-  - [ ] 在授权 Linux 主机完成 Docker/Compose、时间、资源、磁盘、防火墙、端口和部署用户权限检查，并保存不含主机秘密的基线证据。
-  - [ ] 生成并安全保存生产型随机凭据，完成初始 ADMIN/REVIEWER Bootstrap 后立即关闭 Bootstrap；确认仓库、镜像、日志和文档无明文凭据。
+  - [x] 在授权 Linux 主机完成 Docker/Compose、时间、资源、磁盘、防火墙、端口和部署用户权限检查，并保存不含主机秘密的基线证据。
+  - [x] 生成并安全保存生产型随机凭据，完成初始 ADMIN/REVIEWER Bootstrap 后立即关闭 Bootstrap；确认仓库、镜像、日志和文档无明文凭据。
   - [x] 在隔离本地 Linux Engine 和 GitHub-hosted Ubuntu 上从指定 SHA 镜像启动六服务，确认全部 healthy、Flyway V10、5 个命名卷、非 root 应用和日志轮转生效；持久主机仍需重复验证。
-  - [ ] 通过 SSH 隧道完成真实 OpenAPI、JWT/RBAC、CSV 导入、对账、审核、审计、统计、Prometheus target 和 Grafana 仪表盘验收。
-  - [ ] 完成一次保留数据卷的安全停止/再启动，以及两个已验收 SHA 之间的升级和回滚；每一步均通过 smoke 且数据/监控历史不丢失。
+  - [x] 通过 SSH 隧道完成真实 OpenAPI、JWT/RBAC、CSV 导入、对账、审核、审计、统计、Prometheus target 和 Grafana 仪表盘验收。
+  - [x] 完成一次保留数据卷的安全停止/再启动，以及两个已验收 SHA 之间的升级和回滚；每一步均通过 smoke 且数据/监控历史不丢失。
   - [x] 新增 `docs/review/week6-day4-linux-deployment-acceptance.md`，记录命令、时间、镜像 SHA/digest、服务状态、HTTP/业务/监控结果、监听端口、回滚和排错证据，且明确区分临时 runner 与待授权主机。
-  - [ ] 运行完整本地回归和部署配置检查，核对远端真实 CI/镜像发布结果，并完成服务器临时数据清理、敏感信息、权限、范围和 `git diff --check` 审计。
-- **当前验收结论**：本地 378/378、六服务业务/监控闭环、保留卷停机恢复、actionlint、ShellCheck 和 `git diff --check` 已通过。GitHub-hosted run `31474425853` 成功发布 `8b29433cf76bfcf66633c665188578670ddb924e`（digest `sha256:9adec42f2f5f85db110ec1c49bf327c0c8001e5ebd254dcd92423ed9cd487a96`），并在 Ubuntu 24.04.4 上完成 `8b29433 → ce74fa4 → 8b29433`、四轮状态检查和 5 个卷保持。当前工作站未发现授权服务器入口或凭据，无法继续完成主机防火墙/SSH 隧道、600 权限生产环境文件、一次性 Bootstrap、持久主机业务验收和最终清理，因此不得把 Day 4 标记为已完成。
+  - [x] 运行完整本地回归和部署配置检查，核对远端真实 CI/镜像发布结果，并完成服务器临时数据清理、敏感信息、权限、范围和 `git diff --check` 审计。
+- **当前验收结论**：Day 4 已完成。本地 378/378、GitHub-hosted 发布与回滚、授权 Alibaba ECS 基线、SSH 隧道真实业务/监控闭环、Bootstrap 收口、保留卷停机恢复、`c825e75f → 8b29433c → c825e75f` 升级/回滚均通过；最终服务器六服务 healthy、Prometheus target 为 UP、`.env.linux` 为 600 且远端临时 Token 已清理。服务器 IP、私钥和生产口令未写入仓库。
 - **关键文件**：
   - `docs/design/week6-day4-linux-deployment-design.md`
   - `docs/review/week6-day4-linux-deployment-acceptance.md`
