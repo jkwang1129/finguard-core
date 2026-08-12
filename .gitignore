@@ -11,3 +11,9 @@ target/
 *.log
 .DS_Store
 Thumbs.db
+
+# Week 6 Day 5 local performance-test artifacts
+performance/.tools/
+performance/results/
+performance/*.properties
+*.jtl

@@ -45,7 +45,7 @@ class DatabaseBaselineIntegrationTest {
 
         assertThat(current).isNotNull();
         assertThat(current.getVersion()).isNotNull();
-        assertThat(current.getVersion().getVersion()).isEqualTo("10");
+        assertThat(current.getVersion().getVersion()).isEqualTo("11");
     }
 
     @Test
@@ -152,6 +152,28 @@ class DatabaseBaselineIntegrationTest {
                 """,
                 Integer.class
         )).isEqualTo(2);
+    }
+
+    @Test
+    void auditLogDefaultPaginationIndexShouldExist() throws SQLException {
+        String sql = """
+                SELECT column_name, collation
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'audit_logs'
+                  AND index_name = 'idx_audit_logs_created_id'
+                ORDER BY seq_in_index
+                """;
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement =
+                     connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            assertIndexColumn(resultSet, "created_at", "D");
+            assertIndexColumn(resultSet, "id", "D");
+            assertThat(resultSet.next()).isFalse();
+        }
     }
 
     @Test
