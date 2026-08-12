@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 6 Day 3 已完成：应用已提供提交后导入终态 Counter、对账处理 Timer 和稳定分类的消息失败 Counter；Prometheus 与 Grafana 已通过 Compose 自动启动、采集和装载 9 面板仪表盘。完整自动化回归为 378/378；独立空卷环境的 Flyway V1～V10、六服务健康、真实 JWT/HTTP/MQ 指标增量、Actuator 最小暴露和应用重启后的 Prometheus 历史均已验证。Day 2 的首次真实 GitHub Actions `push` 运行记录仍见 [run 31366242428](https://github.com/jkwang1129/finguard-core/actions/runs/31366242428)。
+当前进度为 Week 6 Day 5 已完成：已在当天新建的 Alibaba Cloud ECS 上完成 50,000 条审计数据的真实基线、Flyway V11 默认分页索引优化、健康/Prometheus/EXPLAIN 复核和清理；本地与 Java 17 Docker 完整回归均为 379/379。详细证据见 [Week 6 Day 5 性能验收](docs/review/week6-day5-performance-acceptance.md)。
 
 ## 当前技术基线
 

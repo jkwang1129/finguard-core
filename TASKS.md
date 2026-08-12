@@ -43,7 +43,8 @@
 | Week 6 Day 1 | 已完成 | 生产化边界、OpenAPI/JWT 演示契约与 Day 2～Day 7 职责已锁定；完整回归 370/370 |
 | Week 6 Day 2 | 已完成 | 应用镜像、四服务 Compose、本地空卷验收与真实 GitHub-hosted CI 全部通过 |
 | Week 6 Day 3 | 已完成 | 三类低基数业务指标、六服务监控栈、Grafana 9 面板和独立真实验收完成；完整回归 378/378 |
-| Week 6 Day 4 | 受阻 | 不可变发布、隔离 Linux 部署和跨 SHA 回滚已通过；等待用户提供授权持久 Linux 主机以完成 SSH、防火墙、生产凭据和最终验收 |
+| Week 6 Day 4 | 已完成 | 不可变发布、隔离 Linux 部署和跨 SHA 回滚、授权 Alibaba ECS SSH/监控闭环与六服务健康已完成 |
+| Week 6 Day 5 | 已完成 | 真实 ECS 审计分页基线、JMeter/Prometheus/EXPLAIN 证据、V11 默认排序索引、Java 17 回归和数据清理完成；优化后 JMeter 外部复测因 JWT 传递 401 未作为性能通过证据 |
 
 ## 3. 阶段 0：工程基线
 
