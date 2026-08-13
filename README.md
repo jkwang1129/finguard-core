@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个面向 Java 后端实习项目训练的交易导入、自动对账与异常审核平台。
 
-当前进度为 Week 6 Day 5 已完成：已在当天新建的 Alibaba Cloud ECS 上完成 50,000 条审计数据的真实基线、Flyway V11 默认分页索引优化、健康/Prometheus/EXPLAIN 复核和清理；本地与 Java 17 Docker 完整回归均为 379/379。详细证据见 [Week 6 Day 5 性能验收](docs/review/week6-day5-performance-acceptance.md)。
+当前进度为 Week 6 Day 6 已完成：安全源码/依赖/镜像/配置/秘密与被动 Web 基线已核验，1 个开发 Compose Low 端口暴露问题已修复，Redis、RabbitMQ 和错误 MySQL 配置三次隔离故障演练全部恢复，Java 17 完整回归为 379/379。详细证据见 [Week 6 Day 6 安全报告](docs/review/week6-day6-security-report.md) 和 [Week 6 Day 6 故障演练复盘](docs/review/week6-day6-fault-drills.md)。
 
 ## 当前技术基线
 

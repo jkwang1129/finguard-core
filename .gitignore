@@ -17,3 +17,9 @@ performance/.tools/
 performance/results/
 performance/*.properties
 *.jtl
+
+# Week 6 Day 6 local security-scan artifacts
+security/results/
+security/.cache/
+security/*.token
+security/*.env

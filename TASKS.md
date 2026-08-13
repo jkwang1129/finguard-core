@@ -45,6 +45,7 @@
 | Week 6 Day 3 | 已完成 | 三类低基数业务指标、六服务监控栈、Grafana 9 面板和独立真实验收完成；完整回归 378/378 |
 | Week 6 Day 4 | 已完成 | 不可变发布、隔离 Linux 部署和跨 SHA 回滚、授权 Alibaba ECS SSH/监控闭环与六服务健康已完成 |
 | Week 6 Day 5 | 已完成 | 真实 ECS 审计分页基线、JMeter/Prometheus/EXPLAIN 证据、V11 默认排序索引、Java 17 回归和数据清理完成；优化后 JMeter 外部复测因 JWT 传递 401 未作为性能通过证据 |
+| Week 6 Day 6 | 已完成 | 安全验证、1 个 Low 修复、三次隔离故障演练、379/379 回归和资源清理全部完成 |
 
 ## 3. 阶段 0：工程基线
 
@@ -2022,6 +2023,40 @@
 - **常见错误预防**：不要在服务器 `git pull` 后直接用漂移源码构建；不要部署 `latest`；不要在测试失败时仍发布镜像；不要把 GHCR 写权限 Token 留在服务器；不要把 MySQL、RabbitMQ、Redis、Actuator、Prometheus 或 Grafana 暴露公网；不要提交 `.env` 或在 `docker inspect`/日志/截图中泄露凭据；不要用 `depends_on` 代替健康验收；不要用 `docker compose down -v` 完成停止或回滚；不要只切 tag 不验证 digest；不要把镜像回滚宣传成数据库回滚；不要把 Day 5 压测或 Day 6 故障演练提前混入。
 - **回滚**：Day 4 功能变更可通过停用镜像发布 job、移除 Linux 专用 Compose/脚本/模板和文档恢复；服务器运行回滚只把 `FINGUARD_APP_IMAGE` 切回已验收的旧完整 SHA 并执行拉取/重建/健康检查，不删除命名卷，不修改 V1～V10。若需要彻底下线，只停止并移除容器/网络，卷是否删除必须另行取得明确授权并先确认备份；不得影响主机上的其他项目、容器、镜像或防火墙规则。
 - **提交建议**：`deploy: add immutable Linux deployment workflow`
+
+### Week 6 Day 6：安全验证与三次故障演练
+
+- **状态**：已完成
+- **业务目标**：使用当前源码、自动化测试、扫描器和真实运行证据验证认证、授权、输入、文件、数据、秘密、容器和部署边界，并通过三次隔离故障演练证明 Redis 降级、RabbitMQ 重试/DLQ 和错误配置恢复行为。
+- **范围边界**：扰动操作只针对独立 `finguard-day6` Compose project；ECS 仅做经授权 SSH 边界内的只读复核；ZAP 只运行被动 Baseline；不修改 V1～V11，不新增业务接口，不执行主动公网渗透，不提前完成 Day 7 材料。
+- **执行顺序**：
+  1. 固化设计、实施计划、当前 SHA/Flyway/容器/测试基线和停止门槛。
+  2. 以 TDD 建立 Trivy、ZAP Baseline、认证/RBAC/输入和秘密检查工具。
+  3. 在隔离环境停止并恢复 Redis，验证统计回退、限流 fail-open、健康与缓存恢复。
+  4. 执行真实 RabbitMQ 消费故障，验证两级延迟重试、DLQ、失败指标和无重复写入。
+  5. 使用错误 MySQL 端口启动一次性应用容器，完成 Linux/Compose 诊断与正确配置恢复。
+  6. 对扫描告警逐项做源代码验证，形成安全报告和三份“现象→假设→证据→根因→恢复→预防”复盘。
+  7. 只修复已确认且属于本日范围的问题，运行聚焦测试和完整 Java 17 回归。
+  8. 清理临时数据、消息、Token、扫描结果、容器、网络和隔离卷，完成敏感信息、范围和 `git diff --check` 审计后提交。
+- **任务**：
+  - [x] 新增 Day 6 设计文档和逐步实施计划。
+  - [x] 建立并执行源码、依赖、配置、秘密、镜像和被动 Web 安全检查。
+  - [x] 验证匿名、非法 JWT、过期 JWT、ADMIN/REVIEWER、输入和文件边界。
+  - [x] 完成 Redis 中断与恢复演练。
+  - [x] 完成 RabbitMQ 重试与 DLQ 演练。
+  - [x] 完成错误依赖配置与恢复演练。
+  - [x] 形成安全测试报告和三次可复现故障复盘。
+  - [x] 完成必要修复、完整回归、真实 smoke、清理和提交。
+- **关键文件**：
+  - `docs/design/week6-day6-security-and-fault-drills-design.md`
+  - `docs/superpowers/plans/2026-08-12-week6-day6-security-and-fault-drills.md`
+  - `security/`
+  - `scripts/drills/`
+  - `docs/review/week6-day6-security-report.md`
+  - `docs/review/week6-day6-fault-drills.md`
+- **验收标准**：安全检查覆盖当前源码、依赖、镜像、配置、秘密、认证/RBAC、输入/文件与被动 Web 面；不存在未处置的可复现 Critical/High；三次故障均有完整证据和恢复结果；完整 Maven 回归无失败/跳过；隔离资源与测试数据清理，普通开发和保留环境未受影响；敏感信息、范围和 `git diff --check` 审计通过。
+- **当前验收结论**：Day 6 已完成。Trivy 仓库扫描 0 漏洞/0 配置错误/0 秘密，镜像 299 个 OS 条目已逐项分组验证；ZAP 根路径与 Swagger 被动基线均 0 Fail；真实认证/RBAC/输入负向矩阵和 31/31 聚焦测试通过。确认并修复 1 个 Low：开发 MySQL 端口改为仅绑定 `127.0.0.1`。Redis 降级恢复、RabbitMQ 两级重试/DLQ、错误 MySQL 端口快速失败与恢复三次演练通过；干净隔离卷完整回归 379/379，最终 health 为 200。`finguard-day6` 容器、网络、卷、扫描结果/缓存和临时凭据已删除，普通开发容器未受影响。
+- **提交建议**：`test: verify security and fault recovery`
 
 ## 9. 后续路线
 

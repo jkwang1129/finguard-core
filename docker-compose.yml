@@ -163,7 +163,7 @@ services:
       TZ: Asia/Shanghai
 
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
 
     command:
       - --character-set-server=utf8mb4
