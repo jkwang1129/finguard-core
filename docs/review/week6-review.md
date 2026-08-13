@@ -18,7 +18,7 @@ Week 6 的目标是把前五周业务代码变成可构建、可运行、可观�
 | Day 4 | 完整 SHA GHCR 发布、Linux 私有拓扑、保留卷升级/回滚 | `7646704`, [验收](week6-day4-linux-deployment-acceptance.md) |
 | Day 5 | 认证 JMeter/Prometheus/EXPLAIN 证据，V11 审计分页索引 | `577ef62`, `5f424e1`, [验收](week6-day5-performance-acceptance.md) |
 | Day 6 | 安全验证、1 个 Low 修复、Redis/RabbitMQ/MySQL 故障演练 | `dd146e4`, [安全](week6-day6-security-report.md), [故障](week6-day6-fault-drills.md) |
-| Day 7 | 全量复验、最终文档、演示/面试/简历和 Git/CI 收口 | 本次最终提交 |
+| Day 7 | 全量复验、最终文档、演示/面试/简历和 Git/CI 收口 | `43da42e` |
 
 ## Day 7 fresh baseline
 
@@ -46,6 +46,8 @@ Total time: 03:38 min
 ```
 
 测试连接真实本机 MySQL 8.4、RabbitMQ 和 Redis；Flyway 校验 11 个迁移，schema 当前版本为 11。日志中的 Redis offline 堆栈来自明确验证 fail-open/reset 降级的测试，不是测试失败。
+
+主交付提交 `43da42e` 推送后，GitHub Actions [run 31678759392](https://github.com/jkwang1129/finguard-core/actions/runs/31678759392) 完成且结论为 `success`：`Test, package, and build image` 与 `Publish immutable application image` 两个 job 均通过，后者实际完成完整 SHA 镜像构建/检查/推送、Linux 部署生命周期和验收资源删除。
 
 ## Six-service runtime acceptance
 
@@ -88,7 +90,7 @@ API 创建 `DAY7-DEMO` 账户和人工匹配交易，上传确定性 CSV 后导�
 
 验收脚本在 `finally` 中删除固定 `finguard-day7` 的 6 个容器、网络、5 个命名卷和临时环境目录。退出后再次按 Compose label 查询，Day 7 容器、卷和网络均为 0；临时 JWT/密码未写入仓库。普通开发 MySQL/RabbitMQ/Redis 容器在验收前后保持存在，未执行普通栈 `down -v`。
 
-Day 7 使用隔离空卷，因此业务夹具随验收卷删除，不需要对普通开发数据库执行危险的级联删除。最终审计还会再次检查端口、镜像、生成目录、秘密和 Git 状态。
+Day 7 使用隔离空卷，因此业务夹具随验收卷删除，不需要对普通开发数据库执行危险的级联删除。最终审计再次确认 Day 7 镜像和监听端口为 0、无生成结果或秘密进入提交；主提交推送后本地 `main` 与 `origin/main` 同步。
 
 ## Documentation and resume claim audit
 

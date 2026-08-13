@@ -418,7 +418,7 @@ Ensure the file created in Task 2 uses these exact headings:
 
 Record commands, actual totals/statuses, relevant commit/SHA/run links, and sanitized facts. Mark unavailable external evidence as unavailable; never change it to pass by inference.
 
-- [ ] **Step 3: Update TASKS only after all acceptance gates pass**
+- [x] **Step 3: Update TASKS only after all acceptance gates pass**
 
 Change the Day 7 summary row and section status to `已完成`, check each completed checkbox, add the actual acceptance conclusion, and extend the Git milestone index with the final commit only after it exists.
 
@@ -437,7 +437,7 @@ Change the future-route text so Week 6 is described as completed and point reade
 - Consumes: complete Day 7 working tree.
 - Produces: one scoped commit, synchronized remote branch, green hosted CI, and clean worktree.
 
-- [ ] **Step 1: Re-run focused tooling tests and full Java regression**
+- [x] **Step 1: Re-run focused tooling tests and full Java regression**
 
 Run:
 
@@ -448,15 +448,15 @@ mvn -B -ntp clean test
 
 Expected: tool tests pass; Maven reports zero failures, zero errors, and zero skipped tests.
 
-- [ ] **Step 2: Re-run safe configuration and security smoke**
+- [x] **Step 2: Re-run safe configuration and security smoke**
 
 Run the Day 7 DryRun/preflight, Compose config checks, documentation-link check, and existing `security/tests/test-security-tools.ps1`. Scan tracked and untracked candidate files for private keys, JWT-looking strings, password assignments, `.env` files, result directories, JTL, and scanner output; manually triage every match.
 
-- [ ] **Step 3: Verify cleanup and scope independently**
+- [x] **Step 3: Verify cleanup and scope independently**
 
 Require no `finguard-day7` containers/network/volumes, no Day 7 rows/messages/keys, no listener on 8080, and no temporary environment file. Compare non-Day-7 Docker resources to the preflight inventory and perform only read-only ECS status checks if current authorization and connectivity are available.
 
-- [ ] **Step 4: Inspect whitespace, diff, and generated files**
+- [x] **Step 4: Inspect whitespace, diff, and generated files**
 
 Run:
 
@@ -469,7 +469,7 @@ git diff -- . ':(exclude)target' ':(exclude)performance/results' ':(exclude)secu
 
 Expected: no whitespace errors, no generated/sensitive artifacts, no unrelated changes, and every Day 7 file maps to this plan.
 
-- [ ] **Step 5: Stage intentionally and inspect the staged patch**
+- [x] **Step 5: Stage intentionally and inspect the staged patch**
 
 Run `git add` with the explicit Day 7 file list, then:
 
@@ -481,7 +481,7 @@ git diff --cached
 
 Expected: staged content is complete, scoped, readable, and contains no secret or generated output.
 
-- [ ] **Step 6: Commit the complete Day 7 milestone**
+- [x] **Step 6: Commit the complete Day 7 milestone**
 
 Run:
 
@@ -491,7 +491,7 @@ git commit -m "docs: complete week 6 final acceptance and project handoff"
 
 After the commit, update the TASKS Git milestone index only if that update was already staged with the correct final SHA strategy; otherwise use a follow-up documentation commit rather than amending hidden content.
 
-- [ ] **Step 7: Push and verify real hosted CI**
+- [x] **Step 7: Push and verify real hosted CI**
 
 Run:
 
@@ -501,7 +501,7 @@ git push origin main
 
 Wait for the actual GitHub Actions run triggered by this push. Require its test, package, image assertions, and configured release/deployment verification jobs to finish successfully; record the real run URL and result in the final report rather than treating YAML presence as evidence.
 
-- [ ] **Step 8: Confirm final repository state**
+- [x] **Step 8: Confirm final repository state**
 
 Run:
 
