@@ -1,0 +1,3 @@
+account_no,external_transaction_no,direction,amount,transaction_time,description
+DAY7-DEMO,DAY7-CSV-LARGE-001,EXPENSE,10000.00,2026-08-13 10:00:00,day7 large amount demonstration
+DAY7-DEMO,DAY7-CSV-MATCH-001,INCOME,88.00,2026-08-13 10:05:00,day7 reconciliation demonstration

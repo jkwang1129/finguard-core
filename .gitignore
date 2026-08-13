@@ -23,3 +23,6 @@ security/results/
 security/.cache/
 security/*.token
 security/*.env
+
+# Week 6 Day 7 local acceptance artifacts
+scripts/acceptance/results/

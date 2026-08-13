@@ -46,6 +46,7 @@
 | Week 6 Day 4 | 已完成 | 不可变发布、隔离 Linux 部署和跨 SHA 回滚、授权 Alibaba ECS SSH/监控闭环与六服务健康已完成 |
 | Week 6 Day 5 | 已完成 | 真实 ECS 审计分页基线、JMeter/Prometheus/EXPLAIN 证据、V11 默认排序索引、Java 17 回归和数据清理完成；优化后 JMeter 外部复测因 JWT 传递 401 未作为性能通过证据 |
 | Week 6 Day 6 | 已完成 | 安全验证、1 个 Low 修复、三次隔离故障演练、379/379 回归和资源清理全部完成 |
+| Week 6 Day 7 | 执行中（待最终门禁） | 全量自动化与六服务真实闭环、最终文档/演示/面试/简历材料、资源清理和 Week 6 复盘已完成，待提交/推送/托管 CI 收口 |
 
 ## 3. 阶段 0：工程基线
 
@@ -2058,16 +2059,95 @@
 - **当前验收结论**：Day 6 已完成。Trivy 仓库扫描 0 漏洞/0 配置错误/0 秘密，镜像 299 个 OS 条目已逐项分组验证；ZAP 根路径与 Swagger 被动基线均 0 Fail；真实认证/RBAC/输入负向矩阵和 31/31 聚焦测试通过。确认并修复 1 个 Low：开发 MySQL 端口改为仅绑定 `127.0.0.1`。Redis 降级恢复、RabbitMQ 两级重试/DLQ、错误 MySQL 端口快速失败与恢复三次演练通过；干净隔离卷完整回归 379/379，最终 health 为 200。`finguard-day6` 容器、网络、卷、扫描结果/缓存和临时凭据已删除，普通开发容器未受影响。
 - **提交建议**：`test: verify security and fault recovery`
 
+### Week 6 Day 7：最终验收、文档、演示与简历收口
+
+- **状态**：执行中（待最终门禁）
+- **业务目标**：从干净、隔离、可重复的环境证明 FinGuard Core 能够完成“构建 → 启动 → 登录与 RBAC → CSV 异步导入 → 自动对账 → 风险/审核 → 审计/统计 → 指标采集”的完整闭环；再把六周产生的代码、测试、部署、监控、性能、安全和故障证据整理成可以独立运行、演示、复习和写入实习简历的最终交付物。
+- **当前基线**：
+  - Day 6 已在本地提交 `dd146e4`，历史完整回归为 379/379；当前 `main` 比 `origin/main` 超前 1 个提交。进入 Day 7 后必须重新执行完整验收，不能把历史数字直接写成 Day 7 结论。
+  - 当前 Flyway 最新版本为 V11；Day 7 不修改 V1～V11，也不新增表、索引、接口、业务状态、依赖或运行服务。
+  - Day 1～Day 6 已分别形成 OpenAPI、Compose/CI、监控、Linux 部署、性能、安全与故障证据；Day 7 以这些源文档为事实依据，补齐统一入口和最终复盘，不复制或改写尚未被证据支持的结论。
+  - Day 5 优化前性能基线与 V11 `EXPLAIN ANALYZE` 已验证；优化后的外部 JMeter 复测因请求返回 `401`，不能在 Day 7 简历或 README 中宣传为有效吞吐量、延迟改善百分比或生产性能结论。
+- **最终验收流**：
+
+  ```text
+  核对 Git / Java 17 / Maven / Docker / Compose 与秘密边界
+    → 静态解析开发 Compose、Linux Compose 与 GitHub Actions
+    → 独立 project + 独立命名卷启动 app/MySQL/RabbitMQ/Redis/Prometheus/Grafana
+    → Flyway 从空库执行到 V11，六服务全部 healthy，Prometheus target 为 UP
+    → 真实 ADMIN/REVIEWER 登录并验证匿名 401、越权 403
+    → 上传示例 CSV，轮询异步导入与对账终态
+    → 查询风险、审核任务、执行 REVIEWER 决策并验证审计与统计
+    → 查询 Redis、RabbitMQ、Prometheus/Grafana 和数据库事实
+    → 停止/重启应用并验证持久数据和健康恢复
+    → 清理本日数据、消息、key、容器、网络、隔离卷、Token 和端口
+    → 完善最终文档、演示、面试笔记、简历表述和 Week 6 复盘
+    → 完整回归、敏感信息检查、范围审计、git diff --check、提交与推送
+  ```
+
+- **范围边界**：
+  - 本日只做全量验收、可重复验收脚本、最终文档、演示材料、面试笔记、可验证简历描述、Week 6 复盘、清理和 Git 收口；发现阻断性缺陷时只做最小修复并新增对应回归测试。
+  - 不新增业务功能、数据库迁移、索引、依赖、前端、Nginx、TLS、Kubernetes、OpenTelemetry、ELK、MinIO、Testcontainers、微服务拆分或 FinGuard Copilot。
+  - 全栈验收必须使用独立 Compose project、独立卷和本日专用数据；不得对普通开发栈、ECS 保留部署或其命名卷执行 `docker compose down -v`，不得改动服务器防火墙、域名或外部凭据。
+  - Day 7 不重新进行主动安全攻击、大规模压力测试或故障扰动；只复核 Day 5/6 的可复现证据和执行安全的最终 smoke。任何外部性能、CI、GHCR 或 ECS 结论必须引用真实记录，不能从本地配置文件存在推断成功。
+  - 不提交 `.env`、JWT、密码、私钥、主机地址、Registry Token、原始扫描报告、JTL、数据库导出或临时验收文件；所有最终简历数字必须能指向仓库内或托管平台上的真实证据。
+- **执行顺序**：
+  1. 复核 `PROJECT_BRIEF.md`、`TASKS.md`、README、Day 1～Day 6 设计/验收文档、当前 Git/remote、Flyway、测试、Compose、CI、GHCR 与 ECS 记录，建立“已实现、已验证、有条件验证、未实现”四类交付清单。
+  2. 新增 Day 7 详细实施计划和可重复验收入口；脚本先提供无秘密的 `DryRun`/预检测试，锁定独立 project、允许操作的资源、停止门槛和 `finally` 清理行为。
+  3. 校验 Java 17、Maven、Docker、Compose 配置、Linux Compose 和 CI YAML；在健康依赖或隔离空卷上运行 `mvn -B -ntp clean test`，记录真实 tests/failures/errors/skipped 与 Flyway V11 结果。
+  4. 构建当前应用镜像并启动隔离六服务全栈；轮询六个健康状态、OpenAPI 18 条路径、Prometheus target `UP` 和 Grafana 健康，检查应用非 root、依赖端口边界、命名卷与日志配置。
+  5. 使用运行时生成的临时 ADMIN/REVIEWER 凭据完成真实 JWT/HTTP/MySQL/RabbitMQ/Redis 闭环：权限负向检查、CSV 异步导入、自动对账、风险与审核、乐观锁/审计/统计、业务指标变化及应用重启恢复；每一步核对 API、数据库和中间件事实一致。
+  6. 完善 README 和最终架构、数据库/ER、API、演示、部署、监控、性能、安全/故障、面试与简历材料；文档以已有 Day 1～Day 6 证据为源，明确项目边界、已知限制和不可宣传内容。
+  7. 新增 Week 6 最终复盘，记录六天交付、Day 7 实测结果、关键取舍、踩坑、面试问题、尚未解决事项和后续学习路线；更新 `TASKS.md` 与 Git 里程碑索引，但只在验收完成后改为“已完成”。
+  8. 清理 Day 7 临时用户、业务行、审计行、Redis key、RabbitMQ 消息、临时文件、容器、网络、隔离卷、镜像、凭据和监听端口；独立确认普通开发数据、ECS 保留部署和非 Day 7 Docker 资源未受影响。
+  9. 重新运行完整 Java 17 Maven 回归与安全 smoke，检查文档链接、敏感信息、生成物、范围、`git diff --check`、暂存 diff 和 Git 状态；提交当日完整内容，推送 `main` 并以真实绿色 GitHub Actions run 作为最终远端收口证据。
+- **任务**：
+  - [x] 新增 `docs/superpowers/plans/2026-08-13-week6-day7-final-closeout.md`，锁定逐阶段文件、命令、预期结果、失败停止条件和清理边界。
+  - [x] 建立可重复的 Day 7 验收入口及其 DryRun/资源边界测试，不把秘密作为命令行参数或写入仓库。
+  - [x] 完成 Java 17 环境、Compose/CI 静态配置、当前镜像和完整 Maven 回归验收，记录真实测试数字。
+  - [x] 在独立空卷六服务环境完成 Flyway V1→V11、全部健康、OpenAPI、Prometheus target 和 Grafana 验收。
+  - [x] 完成真实 ADMIN/REVIEWER JWT、RBAC、CSV 异步导入、自动对账、风险/审核、审计/统计、MySQL、RabbitMQ、Redis 和业务指标闭环。
+  - [x] 验证应用容器保留卷重启后的健康、登录、数据库事实和监控抓取恢复；不把应用重启描述为数据库回滚或灾备。
+  - [x] 完善 `README.md`、架构/ER、API、演示、部署、监控、性能、安全/故障、面试笔记和简历材料，确保全部数字可追溯且已知限制清楚。
+  - [x] 新增 `docs/review/week6-review.md`，完成 Week 6 与六周项目的知识、工程、排错和面试复盘。
+  - [ ] 清理 Day 7 全部临时数据与资源，并独立验证普通开发栈和 ECS 保留部署未受影响。
+  - [ ] 完成最终回归、文档链接、秘密、生成物、范围、`git diff --check` 和暂存内容审计，再提交、推送并核对真实托管 CI。
+- **关键文件**：
+  - `docs/superpowers/plans/2026-08-13-week6-day7-final-closeout.md`
+  - `scripts/acceptance/invoke-week6-day7-acceptance.ps1`
+  - `scripts/acceptance/tests/test-week6-day7-acceptance.ps1`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DATABASE.md`
+  - `docs/API.md`
+  - `docs/DEMO.md`
+  - `docs/DEPLOYMENT.md`
+  - `docs/MONITORING.md`
+  - `docs/PERFORMANCE_REPORT.md`
+  - `docs/SECURITY_TEST_REPORT.md`
+  - `docs/INTERVIEW_NOTES.md`
+  - `docs/RESUME.md`
+  - `docs/review/week6-day6-fault-drills.md`
+  - `docs/review/week6-review.md`
+  - `sample-data/demo-import.csv`
+  - `TASKS.md`
+- **预提交验收结论**：Day 7 新鲜 Java 17 完整回归为 379/379（0 失败、0 错误、0 跳过）；独立 `finguard-day7` 空卷六服务全部 healthy，Flyway V11、OpenAPI 18 路径、Prometheus target `UP`、Grafana 健康，真实 JWT/RBAC/CSV 异步导入/对账/风险审核/审计/统计闭环与应用重启恢复均通过。首次运行结束后容器、网络、5 个卷和临时秘密清零，普通开发容器保持存在。最终提交前还将用最新脚本重新执行上述门禁，并等待真实托管 CI 后才把状态改为“已完成”。
+- **验收标准**：当前 Java 17 完整 Maven 测试无失败、错误或跳过；开发与 Linux Compose 配置可解析；独立空卷六服务全部 healthy 且 Flyway 到 V11、OpenAPI 18 条路径、Prometheus target `UP`、Grafana 可用；真实 JWT/RBAC/CSV 异步导入/对账/审核/审计/统计闭环通过并由 HTTP、MySQL、RabbitMQ、Redis 和指标交叉证明；保留卷重启后事实恢复；最终文档链接有效、架构/ER/API/运行/演示/部署/监控/性能/安全/故障/面试/简历/复盘齐全；Day 7 数据和资源清零且普通开发/ECS 环境未受影响；敏感信息、生成物、范围、`git diff --check`、暂存 diff、推送和真实 GitHub Actions run 全部通过。
+- **学习重点**：把“写过代码”转化为“能重建、能验证、能演示、能解释”的工程证据；理解自动化测试、真实运行验收、监控证据、数据清理和 Git/CI 各自证明什么；能够用业务闭环而不是技术名词堆砌介绍项目，并诚实区分个人项目、生产化练习与真实生产经验。
+- **常见错误预防**：不要复制 Day 6 的 379/379 作为 Day 7 新结果；不要在普通开发栈执行 `down -v`；不要把优化后全为 `401` 的 JMeter 复测当性能提升；不要只看 API `200` 而不核对数据库/MQ/Redis/指标；不要在 README、截图、JTL、日志或 Git 中泄露秘密；不要为了让文档“完整”虚构未实现接口、生产用户量、并发量或 SLA；不要在清理和 `git diff --check` 之前提交；不要只推代码不等待真实托管 CI。
+- **回滚**：Day 7 只新增验收脚本、示例数据和文档，若需回滚可删除这些新增文件并恢复 README/TASKS 的 Day 7 改动；验收资源仅删除明确属于 `finguard-day7` 的容器、网络、卷和数据，不删除普通开发或 ECS 卷。若 Day 7 为修复阻断缺陷而修改业务代码，必须以独立回归测试和单独文件清单记录，不能混入未说明的重构。
+- **提交建议**：`docs: complete week 6 final acceptance and project handoff`
+
 ## 9. 后续路线
 
 后续 Day 的详细任务在进入当天时，按本文统一模板补充。候选顺序如下，实际边界以当天设计评审为准。
 
 | 阶段 | 候选交付 |
 |---|---|
-| Week 3 | 导入表结构、同步 CSV 上传与解析、逐行校验、SHA-256 去重、批量入库、同步版自动对账、周验收 |
+| Week 3 | Day 1～Day 7 已完成；同步 CSV 导入、逐行校验、SHA-256 去重、批量入库、同步对账与周验收均已收口 |
 | Week 4 | Day 1～Day 7 已完成；异步导入/对账、Outbox、重试/DLQ、综合验收与周复盘均已收口 |
-| Week 5 | Day 1～Day 7 已规划；风险、审核、乐观锁、审计、Redis 缓存/限流和周验收按顺序推进 |
-| Week 6 | Docker 镜像、GitHub Actions、Linux 部署、Micrometer、Prometheus/Grafana、压测、安全测试、故障演练和最终文档 |
+| Week 5 | Day 1～Day 7 已完成；风险、审核、乐观锁、审计、Redis 缓存/限流和周验收均已收口 |
+| Week 6 | Day 1～Day 7 已进入最终门禁；Docker/CI、监控、Linux、性能、安全、故障和最终材料见 `docs/review/week6-review.md` |
 
 ## 10. Git 里程碑索引
 
@@ -2111,4 +2191,8 @@
 | Week 5 Day 6 Redis 统计缓存与固定窗口限流 | `413d858` |
 | Week 5 Day 7 综合验收与周复盘 | `8e35731` |
 | Week 6 Day 1 生产化契约与 OpenAPI 演示基线 | `6ca94b8` |
-| Week 6 Day 2 应用容器化与 GitHub Actions | `97fd641`、本次提交 |
+| Week 6 Day 2 应用容器化与 GitHub Actions | `97fd641`、`5f5062f` |
+| Week 6 Day 3 Micrometer、Prometheus 与 Grafana | `6f0c284` |
+| Week 6 Day 4 不可变 Linux 部署与回滚 | `7646704` |
+| Week 6 Day 5 性能验收与审计分页索引 | `577ef62`、`5f424e1` |
+| Week 6 Day 6 安全验证与故障演练 | `dd146e4` |
