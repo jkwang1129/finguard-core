@@ -13,18 +13,23 @@ import com.finguard.core.review.exception.InvalidReviewRequestException;
 import com.finguard.core.review.exception.ReviewTaskNotFoundException;
 import com.finguard.core.review.exception.ReviewVersionConflictException;
 import com.finguard.core.review.mapper.ReviewTaskMapper;
+import com.finguard.core.review.model.ReviewTaskContextView;
 import com.finguard.core.review.model.ReviewTaskSourceType;
 import com.finguard.core.review.model.ReviewTaskStatus;
 import com.finguard.core.review.model.ReviewTaskView;
 import com.finguard.core.review.service.ReviewTaskService;
+import com.finguard.core.review.vo.ReviewTaskContextResponse;
 import com.finguard.core.review.vo.ReviewTaskResponse;
 import com.finguard.core.statistics.event.StatisticsChangePublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -79,6 +84,19 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
     @Transactional(readOnly = true)
     public ReviewTaskResponse getById(Long reviewTaskId) {
         return toResponse(requireView(reviewTaskId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ReviewTaskContextResponse getContext(Long reviewTaskId) {
+        requirePositive(reviewTaskId, "reviewTaskId");
+        ReviewTaskContextView view = reviewTaskMapper.selectContextById(
+                reviewTaskId
+        );
+        if (view == null) {
+            throw new ReviewTaskNotFoundException(reviewTaskId);
+        }
+        return toContextResponse(view);
     }
 
     @Override
@@ -231,5 +249,106 @@ public class ReviewTaskServiceImpl implements ReviewTaskService {
                 view.getCreatedAt(),
                 view.getUpdatedAt()
         );
+    }
+
+    private ReviewTaskContextResponse toContextResponse(
+            ReviewTaskContextView view) {
+        return new ReviewTaskContextResponse(
+                new ReviewTaskContextResponse.ReviewTask(
+                        view.getReviewTaskId(),
+                        view.getReviewTaskVersion(),
+                        view.getReviewTaskStatus(),
+                        view.getRuleCode(),
+                        view.getTaskReasonCode(),
+                        toInstant(view.getReviewTaskCreatedAt())
+                ),
+                new ReviewTaskContextResponse.Transaction(
+                        view.getTransactionId(),
+                        view.getAccountId(),
+                        view.getTransactionAmount(),
+                        view.getCurrency(),
+                        toInstant(view.getOccurredAt()),
+                        view.getTransactionSourceType()
+                ),
+                new ReviewTaskContextResponse.Reconciliation(
+                        view.getReconciliationResultType(),
+                        view.getMatchMethod(),
+                        view.getReconciliationReasonCode()
+                ),
+                riskFacts(view),
+                new ReviewTaskContextResponse.AccountSummary(
+                        view.getAccountStatus(),
+                        view.getAccountDisplayName()
+                ),
+                businessClock.instant()
+        );
+    }
+
+    private List<ReviewTaskContextResponse.RiskFact> riskFacts(
+            ReviewTaskContextView view) {
+        if (view.getRuleCode() == null) {
+            return List.of();
+        }
+        List<ReviewTaskContextResponse.RiskFact> facts =
+                new ArrayList<>();
+        addFact(
+                facts,
+                "OBSERVED_AMOUNT",
+                decimalValue(view.getObservedAmount()),
+                "riskHit.observedAmount"
+        );
+        addFact(
+                facts,
+                "THRESHOLD_AMOUNT",
+                decimalValue(view.getThresholdAmount()),
+                "riskHit.thresholdAmount"
+        );
+        addFact(
+                facts,
+                "OBSERVED_COUNT",
+                integerValue(view.getObservedCount()),
+                "riskHit.observedCount"
+        );
+        addFact(
+                facts,
+                "THRESHOLD_COUNT",
+                integerValue(view.getThresholdCount()),
+                "riskHit.thresholdCount"
+        );
+        addFact(
+                facts,
+                "WINDOW_SECONDS",
+                integerValue(view.getWindowSeconds()),
+                "riskHit.windowSeconds"
+        );
+        return List.copyOf(facts);
+    }
+
+    private void addFact(
+            List<ReviewTaskContextResponse.RiskFact> facts,
+            String code,
+            String value,
+            String source) {
+        if (value != null) {
+            facts.add(new ReviewTaskContextResponse.RiskFact(
+                    code,
+                    value,
+                    source
+            ));
+        }
+    }
+
+    private String decimalValue(BigDecimal value) {
+        return value == null ? null : value.toPlainString();
+    }
+
+    private String integerValue(Integer value) {
+        return value == null ? null : value.toString();
+    }
+
+    private Instant toInstant(LocalDateTime value) {
+        // Core DATETIME(3) values are local to the application business
+        // clock zone (Asia/Shanghai in production) and leave the API as UTC.
+        return value.atZone(businessClock.getZone()).toInstant();
     }
 }

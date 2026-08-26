@@ -57,8 +57,16 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/api/auth/me"
+                        ).authenticated()
+                        .requestMatchers(
+                                HttpMethod.GET,
                                 "/api/audit-logs"
                         ).hasRole(RoleCode.ADMIN.name())
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/review-tasks/*/context"
+                        ).hasRole(RoleCode.REVIEWER.name())
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/accounts",

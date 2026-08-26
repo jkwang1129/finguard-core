@@ -28,6 +28,7 @@ class OpenApiHttpIntegrationTest {
 
     private static final List<String> CORE_PATHS = List.of(
             "/api/auth/login",
+            "/api/auth/me",
             "/api/accounts",
             "/api/accounts/{accountId}",
             "/api/accounts/{accountId}/name",
@@ -42,6 +43,7 @@ class OpenApiHttpIntegrationTest {
             "/api/reconciliation-jobs/{reconciliationJobId}/results",
             "/api/review-tasks",
             "/api/review-tasks/{reviewTaskId}",
+            "/api/review-tasks/{reviewTaskId}/context",
             "/api/review-tasks/{reviewTaskId}/decision",
             "/api/audit-logs",
             "/api/statistics/overview"
@@ -103,8 +105,20 @@ class OpenApiHttpIntegrationTest {
         assertThat(loginSecurity.isArray()).isTrue();
         assertThat(loginSecurity).isEmpty();
 
+        JsonNode currentUserSecurity = paths
+                .path("/api/auth/me")
+                .path("get")
+                .path("security");
+        assertThat(currentUserSecurity.isArray()).isTrue();
+        assertThat(currentUserSecurity).hasSize(1);
+        assertThat(currentUserSecurity.get(0)
+                .has(OpenApiConfiguration.BEARER_AUTH)).isTrue();
+
         assertNoFrameworkParameter(
                 paths.path("/api/auth/login").path("post")
+        );
+        assertNoFrameworkParameter(
+                paths.path("/api/auth/me").path("get")
         );
         assertNoFrameworkParameter(
                 paths.path("/api/import-jobs").path("post")

@@ -3,6 +3,7 @@ package com.finguard.core.review.service;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.review.dto.ReviewDecisionRequest;
 import com.finguard.core.review.dto.ReviewTaskQueryRequest;
+import com.finguard.core.review.vo.ReviewTaskContextResponse;
 import com.finguard.core.review.vo.ReviewTaskResponse;
 
 public interface ReviewTaskService {
@@ -12,6 +13,8 @@ public interface ReviewTaskService {
     );
 
     ReviewTaskResponse getById(Long reviewTaskId);
+
+    ReviewTaskContextResponse getContext(Long reviewTaskId);
 
     ReviewTaskResponse decide(
             Long reviewTaskId,
