@@ -7,7 +7,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
+
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.allOf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -26,7 +30,18 @@ class DemoStaticResourceSecurityIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(
                         MediaType.TEXT_HTML
                 ))
-                .andExpect(content().string(containsString("FinGuard Core")));
+                .andExpect(content().string(containsString("FinGuard Core")))
+                .andExpect(result -> assertThat(
+                        result.getResponse().getContentAsString(
+                                StandardCharsets.UTF_8
+                        ),
+                        allOf(
+                                containsString("ADMIN 登录"),
+                                containsString("REVIEWER 登录"),
+                                containsString("流程进度"),
+                                containsString("我已了解演示会写入当前数据库")
+                        )
+                ));
     }
 
     @Test

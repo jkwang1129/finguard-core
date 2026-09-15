@@ -1,11 +1,161 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FinGuard Core</title>
+    <style>
+        :root { color-scheme: light; font-family: system-ui, sans-serif; color: #18212f; background: #f4f7fb; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .shell { width: min(1120px, 100% - 2rem); margin: 0 auto; padding: 1.5rem 0 2.5rem; }
+        .topbar { display: flex; gap: 1rem; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+        h1, h2, h3, p { margin-top: 0; }
+        .badge { border-radius: 999px; background: #e4ecff; color: #173f8a; padding: .4rem .75rem; font-weight: 700; white-space: nowrap; }
+        .card { background: #fff; border: 1px solid #dbe3ef; border-radius: .8rem; padding: 1.25rem; box-shadow: 0 1px 2px rgb(24 33 47 / 8%); }
+        .layout { display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 1rem; }
+        .rail { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+        .rail li { padding: .65rem .75rem; border-left: 4px solid #c9d5e4; background: #f8fafc; }
+        .rail li.active { border-color: #2563eb; background: #edf4ff; font-weight: 700; }
+        .content { display: grid; gap: 1rem; }
+        .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+        form { display: grid; gap: .75rem; }
+        label { display: grid; gap: .35rem; font-weight: 650; }
+        input { width: 100%; padding: .55rem; border: 1px solid #9aa9bc; border-radius: .35rem; font: inherit; }
+        button { width: fit-content; border: 0; border-radius: .35rem; background: #1d4ed8; color: #fff; padding: .6rem .85rem; font: inherit; font-weight: 700; cursor: pointer; }
+        button[disabled] { cursor: wait; opacity: .65; }
+        input:focus-visible, button:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+        .notice { color: #7c2d12; background: #fff7ed; border-left: 4px solid #ea580c; padding: .75rem; }
+        .status { min-height: 1.5rem; color: #334155; }
+        .status.error { color: #b91c1c; }
+        .feed { margin: 0; padding-left: 1.25rem; display: grid; gap: .4rem; }
+        @media (max-width: 720px) {
+            .shell { width: min(100% - 1rem, 1120px); padding-top: 1rem; }
+            .topbar, .layout { display: grid; }
+            .panels { grid-template-columns: 1fr; }
+            .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+    </style>
 </head>
 <body>
-<h1>FinGuard Core</h1>
+<main class="shell">
+    <header class="topbar">
+        <div><h1>FinGuard Core</h1><p>交互式流程演示</p></div>
+        <span id="login-status" class="badge" aria-live="polite">未登录</span>
+    </header>
+    <section class="layout" aria-label="演示流程">
+        <aside class="card"><h2>流程进度</h2><ol class="rail" id="stage-rail">
+            <li class="active">1. 登录准备</li><li>2. 选择账户</li><li>3. 录入交易</li><li>4. 导入数据</li><li>5. 对账处理</li><li>6. 查看结果</li><li>7. 审核确认</li>
+        </ol></aside>
+        <div class="content">
+            <section class="card" aria-labelledby="active-stage-heading">
+                <h2 id="active-stage-heading">当前步骤</h2><p id="active-stage">登录准备：使用各自账户登录以开始演示。</p>
+                <p class="notice">我已了解演示会写入当前数据库</p>
+            </section>
+            <section class="panels" aria-label="登录参数">
+                <section class="card"><h2>ADMIN 登录</h2><form id="admin-login-form">
+                    <label for="admin-username">用户名<input id="admin-username" name="username" autocomplete="username" required></label>
+                    <label for="admin-password">密码<input id="admin-password" name="password" type="password" autocomplete="current-password" required></label>
+                    <button type="submit">登录 ADMIN</button>
+                </form></section>
+                <section class="card"><h2>REVIEWER 登录</h2><form id="reviewer-login-form">
+                    <label for="reviewer-username">用户名<input id="reviewer-username" name="username" autocomplete="username" required></label>
+                    <label for="reviewer-password">密码<input id="reviewer-password" name="password" type="password" autocomplete="current-password" required></label>
+                    <button type="submit">登录 REVIEWER</button>
+                </form></section>
+            </section>
+            <section class="card" aria-labelledby="event-feed-heading">
+                <h2 id="event-feed-heading">事件记录</h2><p id="api-status" class="status" aria-live="polite">等待登录操作。</p><ol id="event-feed" class="feed"></ol>
+            </section>
+        </div>
+    </section>
+</main>
+<script>
+    const demoState = {
+        adminToken: null,
+        reviewerToken: null,
+        runId: null,
+        step: 0,
+        account: null,
+        manualTransaction: null,
+        importJob: null,
+        reconciliationJob: null,
+        results: [],
+        reviewTasks: [],
+        events: [],
+        busy: false
+    };
+
+    class DemoApiError extends Error {
+        constructor(status, code, message) {
+            super(message);
+            this.status = status;
+            this.code = code;
+        }
+    }
+
+    async function request(path, {method = "GET", token = null, json, form} = {}) {
+        const headers = new Headers();
+        if (token) headers.set("Authorization", `Bearer ${token}`);
+        if (json !== undefined) headers.set("Content-Type", "application/json");
+        const response = await fetch(path, { method, headers, credentials: "omit", body: form ?? (json === undefined ? undefined : JSON.stringify(json)) });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new DemoApiError(response.status, payload?.code ?? `HTTP_${response.status}`, payload?.message ?? "Request failed");
+        }
+        return payload;
+    }
+
+    function render() {
+        const activeRoles = [demoState.adminToken && "ADMIN", demoState.reviewerToken && "REVIEWER"].filter(Boolean);
+        document.querySelector("#login-status").textContent = activeRoles.length ? `${activeRoles.join(" / ")} 已登录` : "未登录";
+        document.querySelector("#active-stage").textContent = demoState.step === 0 ? "登录准备：使用各自账户登录以开始演示。" : "流程正在进行。";
+        document.querySelectorAll("#stage-rail li").forEach((item, index) => item.classList.toggle("active", index === demoState.step));
+        const feed = document.querySelector("#event-feed");
+        feed.replaceChildren(...demoState.events.map(event => {
+            const item = document.createElement("li");
+            item.textContent = event;
+            return item;
+        }));
+        document.querySelectorAll("button[type=submit]").forEach(button => { button.disabled = demoState.busy; });
+    }
+
+    function showStatus(message, error = false) {
+        const status = document.querySelector("#api-status");
+        status.textContent = message;
+        status.classList.toggle("error", error);
+    }
+
+    async function loginAs(role, usernameInput, passwordInput) {
+        demoState.busy = true;
+        showStatus(`${role} 正在登录…`);
+        render();
+        try {
+            const payload = await request("/api/auth/login", { method: "POST", json: { username: usernameInput.value, password: passwordInput.value } });
+            if (!payload?.accessToken) throw new DemoApiError(502, "INVALID_LOGIN_RESPONSE", "登录响应无效");
+            if (role === "ADMIN") demoState.adminToken = payload.accessToken;
+            if (role === "REVIEWER") demoState.reviewerToken = payload.accessToken;
+            passwordInput.value = "";
+            demoState.events.unshift(`${role} 登录成功`);
+            showStatus(`${role} 已登录。`);
+        } catch (error) {
+            const apiError = error instanceof DemoApiError ? error : new DemoApiError(0, "NETWORK_ERROR", "无法连接到服务");
+            showStatus(`${apiError.code}: ${apiError.message}`, true);
+        } finally {
+            demoState.busy = false;
+            render();
+        }
+    }
+
+    document.querySelector("#admin-login-form").addEventListener("submit", event => {
+        event.preventDefault();
+        loginAs("ADMIN", document.querySelector("#admin-username"), document.querySelector("#admin-password"));
+    });
+    document.querySelector("#reviewer-login-form").addEventListener("submit", event => {
+        event.preventDefault();
+        loginAs("REVIEWER", document.querySelector("#reviewer-username"), document.querySelector("#reviewer-password"));
+    });
+    render();
+</script>
 </body>
 </html>
