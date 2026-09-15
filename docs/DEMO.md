@@ -17,6 +17,26 @@ Invoke-RestMethod http://127.0.0.1:3000/api/health
 
 预期六服务 healthy，应用 `status=UP`，Prometheus 的 `finguard-core` target 为 `UP`。打开 Swagger UI：`http://127.0.0.1:8080/swagger-ui/index.html`。
 
+### 交互式实时演示
+
+六服务栈全部 healthy 后，打开同源页面：<http://127.0.0.1:8080/demo/index.html>。页面调用当前 Spring Boot 应用的真实 API，并将服务端返回的任务状态、对账结果、审核项和运行记录逐步显示出来；这不是纯前端模拟。
+
+请先准备两个不同的本地演示账号：一个 ADMIN、一个 REVIEWER。可用首次用户 Bootstrap 配置创建缺少的账号，或使用现有认证设置。Compose / `application.yml` 支持以下变量；只在本地受保护的环境配置中设置凭据，不要把值提交到仓库或粘贴到文档：
+
+- `FINGUARD_AUTH_BOOTSTRAP_ENABLED`
+- `FINGUARD_AUTH_BOOTSTRAP_ADMIN_USERNAME`
+- `FINGUARD_AUTH_BOOTSTRAP_ADMIN_PASSWORD`
+- `FINGUARD_AUTH_BOOTSTRAP_REVIEWER_USERNAME`
+- `FINGUARD_AUTH_BOOTSTRAP_REVIEWER_PASSWORD`
+
+首次创建账号时启用 Bootstrap 并配置两组不同用户名和密码，然后启动应用；账号可登录后关闭 Bootstrap 并从环境配置中移除四项用户名/密码，参见[部署手册的首次用户说明](DEPLOYMENT.md#4-首次用户与访问)。在页面的 ADMIN 和 REVIEWER 区域分别登录对应账号。JWT 和凭据只保存在当前页面内存中。
+
+开始任何写入前，勾选“我已了解演示会写入当前数据库”；之后仍须逐个点击页面上的创建、上传、对账或审核操作。建议仅连接本地或一次性数据库：演示会真实写入演示账户与交易、导入和对账任务及结果、审核决定和审计记录，这些数据会留在数据库中。页面的“新建演示批次”只清除页面展示的本批次状态并保留登录，同时会重置写入确认；每个新批次开始写入前都要重新勾选。“清除登录会话”会清除页面内的凭据和批次状态。两者都不会删除已经写入数据库的数据。
+
+批次参数可调整手工匹配金额、CSV 匹配金额、CSV 时间偏移（-4 至 +4 的整数天）和 CSV 风险行金额。默认手工交易本地时间为当前时间往前 10 天；金额默认值为手工/CSV 匹配各 `88.00`、风险行为 `10000.00`，时间偏移为 0。CSV 的候选匹配行使用手工时间加偏移量；保持金额相同且偏移为 0 可演示匹配。页面只改变交易输入，不改变服务端风险规则。若需调整大额风险判定阈值，请设置应用配置变量 `FINGUARD_RISK_LARGE_AMOUNT_THRESHOLD` 并重启应用；仅编辑页面中的风险行金额不会改变规则阈值。
+
+交互页面之外，仍可按下文继续用 Swagger UI 手动逐步调用，也可运行隔离的 Week 6 Day 7 验收脚本做一键证明；两种流程都保留。
+
 如只需要一键证明而不做现场讲解，执行：
 
 ```powershell

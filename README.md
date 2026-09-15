@@ -117,7 +117,7 @@ Day 5 优化后 ECS 外部 JMeter 复测全部返回 401，已判定为 Token �
 - [架构说明](docs/ARCHITECTURE.md)
 - [数据库与 ER](docs/DATABASE.md)
 - [API 与权限/错误](docs/API.md)
-- [演示手册](docs/DEMO.md)
+- [交互式实时演示](http://127.0.0.1:8080/demo/index.html)（六服务栈全部 healthy 后可用）｜[演示手册：启动、账号与数据库写入说明](docs/DEMO.md)
 - [部署与回滚](docs/DEPLOYMENT.md)
 - [运维操作手册](docs/runbooks/README.md)
 - [故障演练记录](docs/incidents/README.md)
