@@ -5,6 +5,7 @@ test('account filters/paging, proper write verbs and cancellation',async()=>{
  await a.query({page:2,size:20,keyword:'<img src=x>',status:'ACTIVE',accountType:'BANK'});
  const q=new URLSearchParams(calls[0][0].split('?')[1]);assert.equal(q.get('page'),'2');assert.equal(q.get('keyword'),'<img src=x>');
  await a.rename(1,'new');await a.status(1,'DISABLED');await a.remove(1);assert.deepEqual(calls.slice(1).map(c=>c[1].method),['PATCH','PATCH','DELETE']);
- allow=false;await a.remove(1);assert.equal(calls.length,4); await assert.rejects(a.get('0'));
+ allow=false;await a.remove(1);assert.equal(calls.length,4); assert.throws(()=>a.get('0'));
 });
 test('reviewer writes never sent',async()=>{const a=createActions({role:'REVIEWER',request:()=>assert.fail('write sent')});await assert.rejects(a.create({}));});
+
