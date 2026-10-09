@@ -1,2 +1,42 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {createActions} from '../../../src/main/resources/static/demo/js/workspaces/reconciliation.js';
-test('validate terminal import, retain receipt and use only results server filters',async()=>{const calls=[];let status='FAILED';const a=createActions({role:'ADMIN',confirmWrite:async()=>true,request:async(p,o={})=>{calls.push([p,o]);return {status:200,data:p.startsWith('/api/import')?{status}:{id:9,duplicateRequest:true}}},pollJob:async(p,o)=>{calls.push([p,o]);return {data:{status:'COMPLETED'}}}});await assert.rejects(a.create(1));assert.equal(calls.length,1);status='SUCCESS';await a.create(1);assert.deepEqual(calls[2][1].json,{importJobId:'1'});await a.repeat();await a.results(9,{page:2,size:20,resultType:'DUPLICATE',reasonCode:'FAKE'});assert.equal(calls.at(-1)[0],'/api/reconciliation-jobs/9/results?page=2&size=20&resultType=DUPLICATE');await a.poll(9);assert.equal(calls.at(-1)[0],'/api/reconciliation-jobs/9');});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createActions } from "../../../src/main/resources/static/demo/js/workspaces/reconciliation.js";
+test("validate terminal import, retain receipt and use only results server filters", async () => {
+  const calls = [];
+  let status = "FAILED";
+  const a = createActions({
+    role: "ADMIN",
+    confirmWrite: async () => true,
+    request: async (p, o = {}) => {
+      calls.push([p, o]);
+      return {
+        status: 200,
+        data: p.startsWith("/api/import")
+          ? { status }
+          : { id: 9, duplicateRequest: true },
+      };
+    },
+    pollJob: async (p, o) => {
+      calls.push([p, o]);
+      return { data: { status: "COMPLETED" } };
+    },
+  });
+  await assert.rejects(a.create(1));
+  assert.equal(calls.length, 1);
+  status = "SUCCESS";
+  await a.create(1);
+  assert.deepEqual(calls[2][1].json, { importJobId: "1" });
+  await a.repeat();
+  await a.results(9, {
+    page: 2,
+    size: 20,
+    resultType: "DUPLICATE",
+    reasonCode: "FAKE",
+  });
+  assert.equal(
+    calls.at(-1)[0],
+    "/api/reconciliation-jobs/9/results?page=2&size=20&resultType=DUPLICATE",
+  );
+  await a.poll(9);
+  assert.equal(calls.at(-1)[0], "/api/reconciliation-jobs/9");
+});

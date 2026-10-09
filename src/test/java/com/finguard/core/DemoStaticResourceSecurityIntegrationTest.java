@@ -20,7 +20,7 @@ class DemoStaticResourceSecurityIntegrationTest {
             .andExpect(content().string(containsString("persistence-ack")));
     }
     @Test void servesExternalStylesAndSharedModulesAnonymously() throws Exception {
-        for (String resource : new String[]{"styles.css","js/app.js","js/api.js","js/ui.js","js/session.js","js/lifecycle.js"})
+        for (String resource : new String[]{"styles.css","js/app.js","js/api.js","js/ui.js","js/session.js","js/lifecycle.js","js/scenarios.js","js/workspaces/accounts.js","js/workspaces/transactions.js","js/workspaces/imports.js","js/workspaces/reconciliation.js","js/workspaces/reviews.js","js/workspaces/insights.js","js/workspaces/guided.js","js/workspaces/engineering.js","js/workspaces/kit.js"})
             mockMvc.perform(get("/demo/" + resource)).andExpect(status().isOk());
     }
     @Test void anonymousBusinessRequestsRemainProtected() throws Exception {
@@ -31,3 +31,4 @@ class DemoStaticResourceSecurityIntegrationTest {
         mockMvc.perform(post("/demo/index.html")).andExpect(status().isUnauthorized());
     }
 }
+

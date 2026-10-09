@@ -1,0 +1,18 @@
+﻿{
+    "project":  "finguard-day6",
+    "observedAt":  "2026-10-09T12:11:13.1615654Z",
+    "sixServices":  [
+                        "finguard-day6-grafana Up 19 seconds (healthy)",
+                        "finguard-day6-prometheus Up 24 seconds (healthy)",
+                        "finguard-day6-app Up 41 seconds (healthy)",
+                        "finguard-day6-redis Up About a minute (healthy)",
+                        "finguard-day6-rabbitmq Up About a minute (healthy)",
+                        "finguard-day6-mysql Up About a minute (healthy)"
+                    ],
+    "imageId":  "sha256:bce07170db5bb6e9c5aeb6d8a9d3daf6a14011c448d1b1cceb3c17388e4ac624",
+    "packaging":  "host Java17 JAR plus pinned cached JRE digest",
+    "browserChannel":  "",
+    "configurationSource":  "generated temporary env plus explicit variant override",
+    "result":  "PASS",
+    "evidenceDirectory":  "C:\\dev\\worktrees\\finguard-core-interactive-live-demo\\scripts\\demo\\results\\bd6207b7270e4b26905a43b0b933b43a"
+}

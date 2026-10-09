@@ -1,9 +1,152 @@
-import {panel,el,form,button,detail,perform,setFeedback} from '../ui.js';
-import {buildScenario,scenarioNames,executeScenarioStep,csv} from '../scenarios.js';
-import {output} from './kit.js';
-import {sanitizeEvidence} from './engineering.js';
-export function mount(root,ctx){const intro=panel(root,'可执行场景配方','先预览，再按步骤写入。默认阈值不代表当前配置；“实际”只展示服务端响应。双会话分别承担创建与审核。'),preview=panel(root,'写入预览'),actual=panel(root,'实际步骤证据'),{status,details}=output(actual),controls=el('div',null,{class:'toolbar'});actual.append(controls);let plan;
- function renderPlan(){preview.replaceChildren(el('h2','写入预览'));detail(preview,{name:plan.name,account:plan.accountNo,expected:plan.expected,manualTransactions:plan.manual,steps:plan.steps.map(s=>s.label)});const disclosure=el('details');disclosure.append(el('summary','预览原始 CSV'),el('pre',csv(plan.accountNo,plan.rows)));preview.append(disclosure);controls.replaceChildren();const next=button('执行下一步',b=>perform(ctx,b,async()=>{const evidence=await executeScenarioStep(plan,plan.state.next,ctx);if(!evidence)return;detail(details,evidence);setFeedback(status,{status:evidence.httpStatus,message:`已完成 ${plan.state.next}/${plan.steps.length}：${evidence.step}`});if(plan.state.next>=plan.steps.length){b.disabled=true;b.dataset.completed='true';}for(const [key,workspace]of [['accountId','accounts'],['importJobId','imports'],['reconciliationJobId','reconciliation']])if(evidence.taskIds[key])details.append(button(`打开 ${workspace} ${evidence.taskIds[key]}`,()=>ctx.navigate(workspace,{id:evidence.taskIds[key]})));for(const id of evidence.taskIds.reviewTaskIds??[])details.append(button(`审核 ${id}`,()=>ctx.navigate('reviews',{id})));},status));controls.append(next,button('导出脱敏步骤证据',()=>{const blob=new Blob([JSON.stringify(plan.state.evidence.map(sanitizeEvidence),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=el('a',null,{href:url,download:`${plan.accountNo}-evidence.json`});link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));}
- form(intro,'预览场景',[{name:'name',label:'业务场景',options:scenarioNames},{name:'amount',label:'人工金额',value:'100.00',required:true},{name:'csvAmount',label:'CSV 匹配金额',value:'100.00',required:true},{name:'offsetDays',label:'CSV 时间偏移（天）',type:'number',min:-4,max:4,step:1,value:0},{name:'riskAmount',label:'风险行金额',value:'12000.00',required:true}],(v,b)=>perform(ctx,b,async()=>{plan=buildScenario(v.name,v);details.replaceChildren();renderPlan();},status),{submit:'生成并预览场景'});
- plan=buildScenario('GUIDED');renderPlan();return {dispose(){}};
+import {
+  panel,
+  el,
+  form,
+  button,
+  detail,
+  perform,
+  setFeedback,
+} from "../ui.js";
+import {
+  buildScenario,
+  scenarioNames,
+  executeScenarioStep,
+  csv,
+} from "../scenarios.js";
+import { output } from "./kit.js";
+import { sanitizeEvidence } from "./engineering.js";
+export function mount(root, ctx) {
+  const intro = panel(
+      root,
+      "可执行场景配方",
+      "先预览，再按步骤写入。默认阈值不代表当前配置；“实际”只展示服务端响应。双会话分别承担创建与审核。",
+    ),
+    preview = panel(root, "写入预览"),
+    actual = panel(root, "实际步骤证据"),
+    { status, details } = output(actual),
+    controls = el("div", null, { class: "toolbar" });
+  actual.append(controls);
+  let plan;
+  function renderPlan() {
+    preview.replaceChildren(el("h2", "写入预览"));
+    detail(preview, {
+      name: plan.name,
+      account: plan.accountNo,
+      expected: plan.expected,
+      manualTransactions: plan.manual,
+      steps: plan.steps.map((s) => s.label),
+    });
+    const disclosure = el("details");
+    disclosure.append(
+      el("summary", "预览原始 CSV"),
+      el("pre", csv(plan.accountNo, plan.rows)),
+    );
+    preview.append(disclosure);
+    controls.replaceChildren();
+    const next = button("执行下一步", (b) =>
+      perform(
+        ctx,
+        b,
+        async () => {
+          const evidence = await executeScenarioStep(
+            plan,
+            plan.state.next,
+            ctx,
+          );
+          if (!evidence) return;
+          detail(details, evidence);
+          setFeedback(status, {
+            status: evidence.httpStatus,
+            message: `已完成 ${plan.state.next}/${plan.steps.length}：${evidence.step}`,
+          });
+          if (plan.state.next >= plan.steps.length) {
+            b.disabled = true;
+            b.dataset.completed = "true";
+          }
+          for (const [key, workspace] of [
+            ["accountId", "accounts"],
+            ["importJobId", "imports"],
+            ["reconciliationJobId", "reconciliation"],
+          ])
+            if (evidence.taskIds[key])
+              details.append(
+                button(`打开 ${workspace} ${evidence.taskIds[key]}`, () =>
+                  ctx.navigate(workspace, { id: evidence.taskIds[key] }),
+                ),
+              );
+          for (const id of evidence.taskIds.reviewTaskIds ?? [])
+            details.append(
+              button(`审核 ${id}`, () => ctx.navigate("reviews", { id })),
+            );
+        },
+        status,
+      ),
+    );
+    controls.append(
+      next,
+      button("导出脱敏步骤证据", () => {
+        const blob = new Blob(
+            [
+              JSON.stringify(
+                plan.state.evidence.map(sanitizeEvidence),
+                null,
+                2,
+              ),
+            ],
+            { type: "application/json" },
+          ),
+          url = URL.createObjectURL(blob),
+          link = el("a", null, {
+            href: url,
+            download: `${plan.accountNo}-evidence.json`,
+          });
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }),
+    );
+  }
+  form(
+    intro,
+    "预览场景",
+    [
+      { name: "name", label: "业务场景", options: scenarioNames },
+      { name: "amount", label: "人工金额", value: "100.00", required: true },
+      {
+        name: "csvAmount",
+        label: "CSV 匹配金额",
+        value: "100.00",
+        required: true,
+      },
+      {
+        name: "offsetDays",
+        label: "CSV 时间偏移（天）",
+        type: "number",
+        min: -4,
+        max: 4,
+        step: 1,
+        value: 0,
+      },
+      {
+        name: "riskAmount",
+        label: "风险行金额",
+        value: "12000.00",
+        required: true,
+      },
+    ],
+    (v, b) =>
+      perform(
+        ctx,
+        b,
+        async () => {
+          plan = buildScenario(v.name, v);
+          details.replaceChildren();
+          renderPlan();
+        },
+        status,
+      ),
+    { submit: "生成并预览场景" },
+  );
+  plan = buildScenario("GUIDED");
+  renderPlan();
+  return { dispose() {} };
 }

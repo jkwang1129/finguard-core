@@ -41,7 +41,7 @@ JWT 有效期为两小时。`ADMIN` 可执行业务写入并读取审计；`REVI
 | GET | `/api/audit-logs` | 允许 | 403 | 查询业务审计 |
 | GET | `/api/statistics/overview` | 允许 | 允许 | 查询缓存统计概览 |
 
-OpenAPI 的路径对象为 20 个；同一路径可能包含多个 HTTP 方法，因此上表操作数多于 18。
+OpenAPI 的路径对象为 20 个；同一路径可能包含多个 HTTP 方法，因此上表操作数为 27。
 
 ## 3. 异步契约
 
@@ -74,3 +74,4 @@ OpenAPI 的路径对象为 20 个；同一路径可能包含多个 HTTP 方法�
 ## 6. 最小演示顺序
 
 登录 ADMIN → 创建账户与 MANUAL 交易 → 上传 `sample-data/demo-import.csv` → 轮询导入 → 创建并轮询对账 → 登录 REVIEWER 决策风险任务 → ADMIN 查询审计与统计。完整命令和清理步骤见[演示手册](DEMO.md)。
+

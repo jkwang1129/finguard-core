@@ -1,0 +1,36 @@
+{
+  "observedAt": "2026-10-09T12:21:53.087Z",
+  "variant": "high-threshold",
+  "results": [
+    {
+      "name": "high-threshold/LARGE_AMOUNT_BOUNDARY",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 5,
+          "importJobId": 5,
+          "reconciliationJobId": 5,
+          "reviewTaskIds": [
+            11
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    }
+  ]
+}

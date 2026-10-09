@@ -1,0 +1,18 @@
+﻿{
+    "project":  "finguard-console",
+    "observedAt":  "2026-10-09T12:21:53.1334075Z",
+    "sixServices":  [
+                        "finguard-console-grafana Up 19 seconds (healthy)",
+                        "finguard-console-prometheus Up 24 seconds (healthy)",
+                        "finguard-console-app Up 36 seconds (healthy)",
+                        "finguard-console-rabbitmq Up 52 seconds (healthy)",
+                        "finguard-console-redis Up 52 seconds (healthy)",
+                        "finguard-console-mysql Up 52 seconds (healthy)"
+                    ],
+    "imageId":  "sha256:58bd4bed4d7e6f936b1319bd4cb8b6ec70b0710faaf8f7665279622c99040b35",
+    "packaging":  "host Java17 JAR plus pinned cached JRE digest",
+    "browserChannel":  "chrome",
+    "configurationSource":  "generated temporary env plus explicit variant override",
+    "result":  "PASS",
+    "evidenceDirectory":  "C:\\dev\\worktrees\\finguard-core-interactive-live-demo\\scripts\\demo\\results\\d1f0db2d80864c8580fb7c1218925573"
+}
