@@ -22,7 +22,7 @@ export async function perform(ctx, target, task, statusNode) {
   if (target.dataset.busy) return; target.dataset.busy = 'true'; target.disabled = true;
   try { const result = await task(); ctx.signal.throwIfAborted(); return result; }
   catch (error) { if (error.name !== 'AbortError' && !ctx.signal.aborted) setFeedback(statusNode, error); }
-  finally { delete target.dataset.busy; target.disabled = false; }
+  finally { delete target.dataset.busy; target.disabled = Boolean(target.dataset.completed); }
 }
 export function form(root, title, fields, onSubmit, {submit = '查询', disabled = false} = {}) {
   const node = el('form', null, {class:'form-grid', 'aria-label':title});
