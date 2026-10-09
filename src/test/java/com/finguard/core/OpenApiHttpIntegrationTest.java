@@ -92,6 +92,11 @@ class OpenApiHttpIntegrationTest {
                 .has(OpenApiConfiguration.BEARER_AUTH)).isTrue();
 
         JsonNode paths = document.path("paths");
+        assertThat(paths).hasSize(20);
+        for (String collection : List.of("/api/import-jobs", "/api/reconciliation-jobs")) {
+            assertThat(paths.path(collection).has("get")).isTrue();
+            assertThat(paths.path(collection).has("post")).isTrue();
+        }
         for (String path : CORE_PATHS) {
             assertThat(paths.has(path))
                     .as("OpenAPI path %s", path)

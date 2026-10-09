@@ -1,5 +1,6 @@
 package com.finguard.core.importjob.service;
 
+import com.finguard.core.importjob.dto.ImportJobQueryRequest;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.importjob.dto.ImportRowErrorQueryRequest;
 import com.finguard.core.importjob.vo.ImportJobResponse;
@@ -19,4 +20,5 @@ public interface ImportJobService {
             Long importJobId,
             ImportRowErrorQueryRequest request
     );
+    PageResponse<ImportJobResponse> query(ImportJobQueryRequest request);
 }
