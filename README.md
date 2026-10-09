@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个 Java 后端个人项目：围绕“交易导入 → 自动对账 → 风险识别 → 人工审核 → 审计/统计”构建完整业务闭环，并用真实 MySQL、RabbitMQ、Redis、JWT/HTTP、Prometheus/Grafana、Docker、Linux 部署、性能与安全证据验收。
 
-当前状态：六周计划已完成，2026-10-09 补齐业务控制台：27 个业务操作、29 个场景配方。当前 Java 回归 404/404、Node 27/27，真实浏览器默认环境 44 项与配置变体 4 项通过；独立 Redis/MQ 演练通过。环境、分次运行及证据边界见 [控制台验收报告](docs/review/2026-10-09-complete-demo-console-acceptance.md)。原 Week 6 Day 7 的 2026-08-13 验收仍是历史基线。
+当前状态：六周计划已完成，2026-10-09 补齐业务控制台：27 个业务操作、29 个场景配方。Java 回归 404/404、Node 28/28，真实浏览器默认环境 44 项与配置变体 4 项通过；独立 Redis/MQ 演练通过。独立审查的重要问题已修复，并增加六项定向浏览器回归。环境与证据边界见 [控制台验收报告](docs/review/2026-10-09-complete-demo-console-acceptance.md)及[独立审查记录](docs/review/2026-10-09-console-independent-review.md)。原 Week 6 Day 7 的 2026-08-13 验收仍是历史基线。
 
 > 这是工程学习与求职展示项目，不是生产银行系统，不提供真实资金处理、生产 SLA、合规认证或灾备承诺。
 

@@ -61,10 +61,18 @@ function shift(time, seconds) {
     .toISOString()
     .slice(0, 19);
 }
+function createRunId() {
+  if (typeof globalThis.crypto.randomUUID === "function")
+    return globalThis.crypto.randomUUID().slice(0, 12);
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
+}
 export function buildScenario(
   name,
   {
-    runId = globalThis.crypto.randomUUID().slice(0, 12),
+    runId = createRunId(),
     anchorTime = new Date(Date.now() - 10 * 86400000 + 8 * 3600000)
       .toISOString()
       .slice(0, 19),
@@ -107,7 +115,11 @@ export function buildScenario(
     if (name === "STRONG_TOLERANCE")
       rows[0].transactionTime = shift(anchorTime, 3 * 86400);
     if (name === "DIRECTION_MISMATCH") rows[0].direction = "INCOME";
-    if (name === "AMOUNT_MISMATCH") rows[0].amount = "101.01";
+    if (name === "AMOUNT_MISMATCH") {
+      const [whole, fraction = ""] = amount.split(".");
+      const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+      rows[0].amount = cents === 10101n ? "102.01" : "101.01";
+    }
     if (name === "TIME_OUT_OF_RANGE")
       rows[0].transactionTime = shift(anchorTime, 4 * 86400);
     expected = {

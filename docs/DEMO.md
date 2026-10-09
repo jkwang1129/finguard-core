@@ -117,4 +117,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-we
 场景区提供完整对账原因、三条规则和边界、文件与业务行去重、两种决定、版本冲突、终态拒绝和权限拒绝。预期是配方条件；实际事实始终来自 API。风险规则默认配置仅作说明，非默认阈值或关闭规则可能返回无命中。
 
 工程区采集同源 health/prometheus，提供可配置监控链接和维护者隔离演练步骤。浏览器不启动 Docker，不持有服务凭据。旧报告注明原时间/环境；没有当次证据的演练标为未验证。覆盖与当前验收结果见 `docs/DEMO_COVERAGE.md` 和 `docs/review/2026-10-09-complete-demo-console-acceptance.md`。
-

@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-10-09T12:21:27.141Z",
+  "observedAt": "2026-10-09T12:52:50.410Z",
   "variant": "rules-disabled",
   "results": [
     {
@@ -7,11 +7,11 @@
       "status": "PASS",
       "evidence": {
         "taskIds": {
-          "accountId": 2,
-          "importJobId": 2,
-          "reconciliationJobId": 2,
+          "accountId": 137,
+          "importJobId": 87,
+          "reconciliationJobId": 32,
           "reviewTaskIds": [
-            3
+            45
           ]
         },
         "httpStatus": [
@@ -37,12 +37,12 @@
       "status": "PASS",
       "evidence": {
         "taskIds": {
-          "accountId": 3,
-          "importJobId": 3,
-          "reconciliationJobId": 3,
+          "accountId": 138,
+          "importJobId": 88,
+          "reconciliationJobId": 33,
           "reviewTaskIds": [
-            5,
-            4
+            47,
+            46
           ]
         },
         "httpStatus": [
@@ -69,15 +69,15 @@
       "status": "PASS",
       "evidence": {
         "taskIds": {
-          "accountId": 4,
-          "importJobId": 4,
-          "reconciliationJobId": 4,
+          "accountId": 139,
+          "importJobId": 89,
+          "reconciliationJobId": 34,
           "reviewTaskIds": [
-            10,
-            9,
-            8,
-            7,
-            6
+            52,
+            51,
+            50,
+            49,
+            48
           ]
         },
         "httpStatus": [

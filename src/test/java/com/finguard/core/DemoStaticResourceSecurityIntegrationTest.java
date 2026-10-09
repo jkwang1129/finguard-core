@@ -31,4 +31,3 @@ class DemoStaticResourceSecurityIntegrationTest {
         mockMvc.perform(post("/demo/index.html")).andExpect(status().isUnauthorized());
     }
 }
-

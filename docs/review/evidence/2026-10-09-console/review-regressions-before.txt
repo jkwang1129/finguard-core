@@ -1,0 +1,22 @@
+PASS non-localhost HTTP mounts default GUIDED
+FAIL accounts late detail cannot replace new edit target: Expected values to be strictly equal:
+
+'OLD-1' !== 'NEW-2'
+
+FAIL transactions late detail cannot replace new edit target: Expected values to be strictly equal:
+
+'OLD-1' !== 'NEW-2'
+
+FAIL existing sub-minute transaction submits unchanged time: Expected values to be strictly equal:
+
+true !== false
+
+FAIL replacement recipe cancels stale poll and evidence: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- true
+
+FAIL review filters expose only supported result types: Expected values to be strictly equal:
+
+true !== false

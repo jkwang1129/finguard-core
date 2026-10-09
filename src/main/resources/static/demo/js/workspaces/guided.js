@@ -26,8 +26,22 @@ export function mount(root, ctx) {
     { status, details } = output(actual),
     controls = el("div", null, { class: "toolbar" });
   actual.append(controls);
-  let plan;
+  let plan, recipeController;
   function renderPlan() {
+    recipeController?.abort();
+    recipeController = new AbortController();
+    const currentPlan = plan;
+    const signal = AbortSignal.any([ctx.signal, recipeController.signal]);
+    const recipeCtx = { ...ctx, signal };
+    for (const name of ["request", "pollJob", "readAllPages"])
+      recipeCtx[name] = (path, options = {}) =>
+        ctx[name](path, {
+          ...options,
+          signal: options.signal
+            ? AbortSignal.any([signal, options.signal])
+            : signal,
+        });
+    status.replaceChildren();
     preview.replaceChildren(el("h2", "写入预览"));
     detail(preview, {
       name: plan.name,
@@ -45,21 +59,21 @@ export function mount(root, ctx) {
     controls.replaceChildren();
     const next = button("执行下一步", (b) =>
       perform(
-        ctx,
+        recipeCtx,
         b,
         async () => {
           const evidence = await executeScenarioStep(
-            plan,
-            plan.state.next,
-            ctx,
+            currentPlan,
+            currentPlan.state.next,
+            recipeCtx,
           );
-          if (!evidence) return;
+          if (!evidence || plan !== currentPlan || signal.aborted) return;
           detail(details, evidence);
           setFeedback(status, {
             status: evidence.httpStatus,
-            message: `已完成 ${plan.state.next}/${plan.steps.length}：${evidence.step}`,
+            message: `已完成 ${currentPlan.state.next}/${currentPlan.steps.length}：${evidence.step}`,
           });
-          if (plan.state.next >= plan.steps.length) {
+          if (currentPlan.state.next >= currentPlan.steps.length) {
             b.disabled = true;
             b.dataset.completed = "true";
           }
@@ -148,5 +162,9 @@ export function mount(root, ctx) {
   );
   plan = buildScenario("GUIDED");
   renderPlan();
-  return { dispose() {} };
+  return {
+    dispose() {
+      recipeController?.abort();
+    },
+  };
 }

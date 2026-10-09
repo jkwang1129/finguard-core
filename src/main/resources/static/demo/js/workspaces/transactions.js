@@ -12,6 +12,7 @@ import {
   common,
 } from "../ui.js";
 import { write, list, query, output } from "./kit.js";
+import { createLatest } from "../lifecycle.js";
 export const isEditable = (row) => row.source === "MANUAL";
 export function body(v) {
   return {
@@ -25,7 +26,7 @@ export function createActions(ctx) {
   const path = (id) => `/api/transactions/${positiveId(id)}`;
   return {
     query: (f, s) => query(ctx, "/api/transactions", f, s),
-    get: (id) => ctx.request(path(id)),
+    get: (id, signal) => ctx.request(path(id), { signal }),
     create: (v) =>
       write(ctx, "/api/transactions", {
         json: {
@@ -72,6 +73,7 @@ const fields = (row) => [
     name: "transactionTime",
     label: "业务时间（Asia/Shanghai，无 UTC 转换）",
     type: "datetime-local",
+    step: "any",
     value:
       row?.transactionTime ??
       new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16),
@@ -95,8 +97,11 @@ export function mount(root, ctx) {
   const current = panel(root, "交易详情"),
     { status, details } = output(current);
   let listing;
-  async function show(id) {
-    const r = await a.get(id);
+  const detailRead = createLatest(renderDetail);
+  function show(id) {
+    return detailRead.run((signal) => a.get(id, signal));
+  }
+  function renderDetail(r) {
     detail(details, r.data);
     const row = r.data;
     details.append(
@@ -114,7 +119,7 @@ export function mount(root, ctx) {
             async () => {
               const r = await a.update(row, v);
               if (r) {
-                await show(id);
+                await show(row.id);
                 listing.load();
               }
             },
@@ -213,5 +218,11 @@ export function mount(root, ctx) {
   }
   if (ctx.params.id && ctx.identity(ctx.role))
     show(ctx.params.id).catch((e) => setFeedback(status, e));
-  return listing;
+  return {
+    ...listing,
+    dispose() {
+      detailRead.dispose();
+      listing.dispose();
+    },
+  };
 }

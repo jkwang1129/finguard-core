@@ -11,11 +11,12 @@ import {
   common,
 } from "../ui.js";
 import { write, list, query, output } from "./kit.js";
+import { createLatest } from "../lifecycle.js";
 export function createActions(ctx) {
   const path = (id) => `/api/accounts/${positiveId(id)}`;
   return {
     query: (f, s) => query(ctx, "/api/accounts", f, s),
-    get: (id) => ctx.request(path(id)),
+    get: (id, signal) => ctx.request(path(id), { signal }),
     create: (json) => write(ctx, "/api/accounts", { json, action: "创建账户" }),
     rename: (id, accountName) =>
       write(ctx, `${path(id)}/name`, {
@@ -52,8 +53,11 @@ export function mount(root, ctx) {
   const current = panel(root, "账户详情"),
     { status, details } = output(current);
   let listing;
-  async function show(id) {
-    const r = await a.get(id);
+  const detailRead = createLatest(renderDetail);
+  function show(id) {
+    return detailRead.run((signal) => a.get(id, signal));
+  }
+  function renderDetail(r) {
     detail(details, r.data);
     const row = r.data;
     details.append(
@@ -184,5 +188,11 @@ export function mount(root, ctx) {
   }
   if (ctx.params.id && ctx.identity(ctx.role))
     show(ctx.params.id).catch((e) => setFeedback(status, e));
-  return listing;
+  return {
+    ...listing,
+    dispose() {
+      detailRead.dispose();
+      listing.dispose();
+    },
+  };
 }

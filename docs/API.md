@@ -74,4 +74,3 @@ OpenAPI 的路径对象为 20 个；同一路径可能包含多个 HTTP 方法�
 ## 6. 最小演示顺序
 
 登录 ADMIN → 创建账户与 MANUAL 交易 → 上传 `sample-data/demo-import.csv` → 轮询导入 → 创建并轮询对账 → 登录 REVIEWER 决策风险任务 → ADMIN 查询审计与统计。完整命令和清理步骤见[演示手册](DEMO.md)。
-

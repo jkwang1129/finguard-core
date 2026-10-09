@@ -1,6 +1,11 @@
 {
-  "observedAt": "2026-10-09T12:52:20.205Z",
+  "observedAt": "2026-10-09T12:20:57.275Z",
   "variant": "baseline",
+  "sourceRuns": [
+    "c8e1b766b36c42b0a0ab0f5c2be74d97",
+    "d1f0db2d80864c8580fb7c1218925573"
+  ],
+  "note": "42 business/scenario/reliability passes retained; accessibility rerun after locator and layout fixes",
   "results": [
     {
       "name": "账户六操作及安全文本",

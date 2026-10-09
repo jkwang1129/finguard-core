@@ -93,4 +93,3 @@ try {
  if($started -and @(& docker volume ls -q --filter "label=com.docker.compose.project=$project").Count -gt 0){throw 'Cleanup left volumes'}
  Write-Output 'Owned console resources and temporary credentials cleaned.'
 }
-

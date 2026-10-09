@@ -44,4 +44,3 @@ test("decimal string, complete replacement, filters and CSV protection", async (
   assert.match(calls[2][0], /accountId=1/);
   assert.throws(() => body({ ...v, amount: "NaN" }));
 });
-

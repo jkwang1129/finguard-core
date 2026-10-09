@@ -176,7 +176,6 @@ export function mount(root, ctx) {
         label: "对账结果",
         options: [
           common.all,
-          "MATCHED",
           "UNMATCHED",
           "DUPLICATE",
           "SUSPICIOUS",
