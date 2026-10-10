@@ -1,6 +1,7 @@
 package com.finguard.core.reconciliation.controller;
 
 import com.finguard.core.common.vo.PageResponse;
+import com.finguard.core.reconciliation.dto.ReconciliationJobQueryRequest;
 import com.finguard.core.reconciliation.dto.CreateReconciliationJobRequest;
 import com.finguard.core.reconciliation.dto.ReconciliationResultQueryRequest;
 import com.finguard.core.reconciliation.service.ReconciliationJobService;
@@ -110,5 +111,10 @@ public class ReconciliationJobController {
                     "Authenticated JWT subject is invalid"
             );
         }
+    }
+    @GetMapping
+    @Operation(summary = "Query reconciliation job history")
+    public PageResponse<ReconciliationJobResponse> query(@Valid @ModelAttribute ReconciliationJobQueryRequest request) {
+        return reconciliationJobService.query(request);
     }
 }

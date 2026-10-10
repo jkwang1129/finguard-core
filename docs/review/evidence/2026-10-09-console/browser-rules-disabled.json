@@ -1,0 +1,106 @@
+{
+  "observedAt": "2026-10-09T12:52:50.410Z",
+  "variant": "rules-disabled",
+  "results": [
+    {
+      "name": "rules-disabled/LARGE_AMOUNT_BOUNDARY",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 137,
+          "importJobId": 87,
+          "reconciliationJobId": 32,
+          "reviewTaskIds": [
+            45
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "rules-disabled/POSSIBLE_DUPLICATE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 138,
+          "importJobId": 88,
+          "reconciliationJobId": 33,
+          "reviewTaskIds": [
+            47,
+            46
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "rules-disabled/FREQUENT_TRANSACTION",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 139,
+          "importJobId": 89,
+          "reconciliationJobId": 34,
+          "reviewTaskIds": [
+            52,
+            51,
+            50,
+            49,
+            48
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# 集成测试自包含：由 Testcontainers 拉起 MySQL / RabbitMQ / Redis。
+#
+# Spring Boot 3.x 仍会通过 SpringFactoriesLoader 加载
+# org.springframework.boot.env.EnvironmentPostProcessor，
+# 因此这里注册的处理器对所有 @SpringBootTest 生效，无需修改任何测试类。
+# 实现见 src/test/java/com/finguard/core/testsupport/TestcontainersEnvironmentPostProcessor.java
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.finguard.core.testsupport.TestcontainersEnvironmentPostProcessor

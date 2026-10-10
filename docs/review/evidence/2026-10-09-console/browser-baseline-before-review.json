@@ -1,0 +1,1071 @@
+{
+  "observedAt": "2026-10-09T12:20:57.275Z",
+  "variant": "baseline",
+  "sourceRuns": [
+    "c8e1b766b36c42b0a0ab0f5c2be74d97",
+    "d1f0db2d80864c8580fb7c1218925573"
+  ],
+  "note": "42 business/scenario/reliability passes retained; accessibility rerun after locator and layout fixes",
+  "results": [
+    {
+      "name": "账户六操作及安全文本",
+      "status": "PASS",
+      "evidence": {
+        "accountId": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "人工交易五操作与精确金额",
+      "status": "PASS",
+      "evidence": {
+        "transactionId": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "任意 CSV、错误分页、文件幂等与刷新找回",
+      "status": "PASS",
+      "evidence": {
+        "importJobId": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "对账历史、逐笔结果与幂等、CSV 只读",
+      "status": "PASS",
+      "evidence": {
+        "reconciliationJobId": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "审核上下文与 409 备注保留",
+      "status": "PASS",
+      "evidence": {
+        "reviewTaskId": 2
+      },
+      "limitation": null
+    },
+    {
+      "name": "审计与全库统计",
+      "status": "PASS",
+      "evidence": {},
+      "limitation": null
+    },
+    {
+      "name": "六服务监控事实",
+      "status": "PASS",
+      "evidence": {},
+      "limitation": null
+    },
+    {
+      "name": "baseline/GUIDED",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 4,
+          "manualTransactionIds": [
+            4
+          ],
+          "importJobId": 3,
+          "reconciliationJobId": 3,
+          "reviewTaskIds": [
+            4,
+            3
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "EXACT_MATCH",
+          "NO_CANDIDATE"
+        ],
+        "rules": [
+          "LARGE_AMOUNT"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/IMPORT_SUCCESS",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 5,
+          "importJobId": 4,
+          "reconciliationJobId": 4,
+          "reviewTaskIds": [
+            5
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/IMPORT_PARTIAL",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 6,
+          "importJobId": 5,
+          "reconciliationJobId": 5,
+          "reviewTaskIds": [
+            6
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "PARTIAL_SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/IMPORT_FILE_FAILED",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 7,
+          "importJobId": 6
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          200
+        ],
+        "importStatus": "FAILED"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/FILE_DUPLICATE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 8,
+          "importJobId": 7,
+          "reconciliationJobId": 6,
+          "reviewTaskIds": [
+            7
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/ROW_DUPLICATE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 9,
+          "importJobId": 8,
+          "secondImportJobId": 9,
+          "reconciliationJobId": 7,
+          "reviewTaskIds": [
+            8
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/EXACT",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 10,
+          "manualTransactionIds": [
+            11
+          ],
+          "importJobId": 10,
+          "reconciliationJobId": 8,
+          "reviewTaskIds": []
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "EXACT_MATCH"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/STRONG_TOLERANCE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 11,
+          "manualTransactionIds": [
+            13
+          ],
+          "importJobId": 11,
+          "reconciliationJobId": 9,
+          "reviewTaskIds": []
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "TOLERANCE_MATCH"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/WEAK_TOLERANCE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 12,
+          "manualTransactionIds": [
+            15
+          ],
+          "importJobId": 12,
+          "reconciliationJobId": 10,
+          "reviewTaskIds": []
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "TOLERANCE_MATCH"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/NO_CANDIDATE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 13,
+          "importJobId": 13,
+          "reconciliationJobId": 11,
+          "reviewTaskIds": [
+            9
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/MULTIPLE_CANDIDATES",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 14,
+          "manualTransactionIds": [
+            18,
+            19
+          ],
+          "importJobId": 14,
+          "reconciliationJobId": 12,
+          "reviewTaskIds": [
+            10
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "MULTIPLE_CANDIDATES"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/MANUAL_ALREADY_MATCHED",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 15,
+          "manualTransactionIds": [
+            21
+          ],
+          "importJobId": 15,
+          "reconciliationJobId": 13,
+          "reviewTaskIds": [
+            12,
+            11
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "EXACT_MATCH",
+          "MANUAL_ALREADY_MATCHED"
+        ],
+        "rules": [
+          "POSSIBLE_DUPLICATE"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/DIRECTION_MISMATCH",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 16,
+          "manualTransactionIds": [
+            24
+          ],
+          "importJobId": 16,
+          "reconciliationJobId": 14,
+          "reviewTaskIds": [
+            13
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "DIRECTION_MISMATCH"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/AMOUNT_MISMATCH",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 17,
+          "manualTransactionIds": [
+            26
+          ],
+          "importJobId": 17,
+          "reconciliationJobId": 15,
+          "reviewTaskIds": [
+            14
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "AMOUNT_MISMATCH"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/TIME_OUT_OF_RANGE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 18,
+          "manualTransactionIds": [
+            28
+          ],
+          "importJobId": 18,
+          "reconciliationJobId": 16,
+          "reviewTaskIds": [
+            15
+          ]
+        },
+        "httpStatus": [
+          201,
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "TIME_OUT_OF_RANGE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/LARGE_AMOUNT",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 19,
+          "importJobId": 19,
+          "reconciliationJobId": 17,
+          "reviewTaskIds": [
+            17,
+            16
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [
+          "LARGE_AMOUNT"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/LARGE_AMOUNT_BELOW",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 20,
+          "importJobId": 20,
+          "reconciliationJobId": 18,
+          "reviewTaskIds": [
+            18
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/LARGE_AMOUNT_BOUNDARY",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 21,
+          "importJobId": 21,
+          "reconciliationJobId": 19,
+          "reviewTaskIds": [
+            20,
+            19
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [
+          "LARGE_AMOUNT"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/POSSIBLE_DUPLICATE",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 22,
+          "importJobId": 22,
+          "reconciliationJobId": 20,
+          "reviewTaskIds": [
+            23,
+            22,
+            21
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [
+          "POSSIBLE_DUPLICATE"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/DUPLICATE_OUTSIDE_WINDOW",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 23,
+          "importJobId": 23,
+          "reconciliationJobId": 21,
+          "reviewTaskIds": [
+            25,
+            24
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/FREQUENT_TRANSACTION",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 24,
+          "importJobId": 24,
+          "reconciliationJobId": 22,
+          "reviewTaskIds": [
+            31,
+            30,
+            29,
+            28,
+            27,
+            26
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [
+          "FREQUENT_TRANSACTION"
+        ],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/FREQUENT_BELOW",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 25,
+          "importJobId": 25,
+          "reconciliationJobId": 23,
+          "reviewTaskIds": [
+            35,
+            34,
+            33,
+            32
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE",
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/CONFIRMED",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 26,
+          "importJobId": 26,
+          "reconciliationJobId": 24,
+          "reviewTaskIds": [
+            36
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/IGNORED",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 27,
+          "importJobId": 27,
+          "reconciliationJobId": 25,
+          "reviewTaskIds": [
+            37
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/VERSION_CONFLICT",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 28,
+          "importJobId": 28,
+          "reconciliationJobId": 26,
+          "reviewTaskIds": [
+            38
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          409,
+          200,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/TERMINAL_DECISION",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 29,
+          "importJobId": 29,
+          "reconciliationJobId": 27,
+          "reviewTaskIds": [
+            39
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          200,
+          409,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/ANONYMOUS_401",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 30,
+          "importJobId": 30,
+          "reconciliationJobId": 28,
+          "reviewTaskIds": [
+            40
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          401,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/REVIEWER_WRITE_403",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 31,
+          "importJobId": 31,
+          "reconciliationJobId": 29,
+          "reviewTaskIds": [
+            41
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          403,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "baseline/ADMIN_DECISION_403",
+      "status": "PASS",
+      "evidence": {
+        "taskIds": {
+          "accountId": 32,
+          "importJobId": 32,
+          "reconciliationJobId": 30,
+          "reviewTaskIds": [
+            42
+          ]
+        },
+        "httpStatus": [
+          201,
+          202,
+          200,
+          202,
+          200,
+          200,
+          403,
+          200,
+          200
+        ],
+        "reasons": [
+          "NO_CANDIDATE"
+        ],
+        "rules": [],
+        "importStatus": "SUCCESS"
+      },
+      "limitation": null
+    },
+    {
+      "name": "真实 101 条分页",
+      "status": "PASS",
+      "evidence": {
+        "count": 101
+      },
+      "limitation": null
+    },
+    {
+      "name": "第二页批次审计不丢失",
+      "status": "PASS",
+      "evidence": {
+        "auditId": 20,
+        "importJobId": 10
+      },
+      "limitation": null
+    },
+    {
+      "name": "普通双击写入只一次",
+      "status": "PASS",
+      "evidence": {
+        "writes": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "旧任务晚响应不能覆盖新任务",
+      "status": "PASS",
+      "evidence": {
+        "selectedId": 34
+      },
+      "limitation": null
+    },
+    {
+      "name": "GET 超时区分且不重发",
+      "status": "PASS",
+      "evidence": {
+        "code": "REQUEST_TIMEOUT",
+        "count": 1
+      },
+      "limitation": null
+    },
+    {
+      "name": "注销、存储和操作记录没有凭据",
+      "status": "PASS",
+      "evidence": {},
+      "limitation": null
+    },
+    {
+      "name": "原调参演示迁移与单步真实闭环",
+      "status": "PASS",
+      "evidence": {
+        "steps": 9
+      },
+      "limitation": null
+    },
+    {
+      "name": "桌面、390px、键盘与表单标签",
+      "status": "PASS",
+      "evidence": {
+        "screenshots": [
+          "desktop.png",
+          "mobile-390.png"
+        ]
+      },
+      "limitation": null
+    }
+  ]
+}

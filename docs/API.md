@@ -9,10 +9,11 @@
 
 JWT 有效期为两小时。`ADMIN` 可执行业务写入并读取审计；`REVIEWER` 可读业务并独占审核决策权限。匿名业务请求返回 401，已认证但角色不足返回 403。
 
-## 2. 18 条业务路径
+## 2. 20 条业务路径、27 个业务操作
 
 | 方法 | 路径 | ADMIN | REVIEWER | 说明 |
 | --- | --- | --- | --- | --- |
+| GET | `/api/auth/me` | 已认证 | 已认证 | 查询服务端身份 |
 | POST | `/api/auth/login` | 公开 | 公开 | 校验凭据并签发 JWT |
 | POST | `/api/accounts` | 允许 | 403 | 创建账户 |
 | GET | `/api/accounts` | 允许 | 允许 | 筛选和分页账户 |
@@ -25,19 +26,22 @@ JWT 有效期为两小时。`ADMIN` 可执行业务写入并读取审计；`REVI
 | GET | `/api/transactions/{id}` | 允许 | 允许 | 查询交易详情 |
 | PUT | `/api/transactions/{id}` | 允许 | 403 | 替换 MANUAL 交易 |
 | DELETE | `/api/transactions/{id}` | 允许 | 403 | 软删除 MANUAL 交易 |
+| GET | `/api/import-jobs` | 允许 | 允许 | 历史分页；status、createdBy 筛选 |
 | POST | `/api/import-jobs` | 允许 | 403 | multipart 上传 CSV；首次 202，重复文件 200 |
 | GET | `/api/import-jobs/{id}` | 允许 | 允许 | 查询异步导入状态 |
 | GET | `/api/import-jobs/{id}/errors` | 允许 | 允许 | 查询行错误 |
+| GET | `/api/reconciliation-jobs` | 允许 | 允许 | 历史分页；status、importJobId、createdBy 筛选 |
 | POST | `/api/reconciliation-jobs` | 允许 | 403 | 首次受理 202，重复请求 200 |
 | GET | `/api/reconciliation-jobs/{id}` | 允许 | 允许 | 查询对账状态 |
 | GET | `/api/reconciliation-jobs/{id}/results` | 允许 | 允许 | 查询逐笔结果 |
 | GET | `/api/review-tasks` | 允许 | 允许 | 筛选审核任务 |
 | GET | `/api/review-tasks/{id}` | 允许 | 允许 | 查询审核任务详情 |
+| GET | `/api/review-tasks/{id}/context` | 403 | 允许 | 脱敏审核上下文 |
 | PATCH | `/api/review-tasks/{id}/decision` | 403 | 允许 | 携带 version 确认或忽略 |
 | GET | `/api/audit-logs` | 允许 | 403 | 查询业务审计 |
 | GET | `/api/statistics/overview` | 允许 | 允许 | 查询缓存统计概览 |
 
-OpenAPI 的路径对象为 18 个；同一路径可能包含多个 HTTP 方法，因此上表操作数多于 18。
+OpenAPI 的路径对象为 20 个；同一路径可能包含多个 HTTP 方法，因此上表操作数为 27。
 
 ## 3. 异步契约
 

@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {csv} from '../../../src/main/resources/static/demo/js/scenarios.js';
+test('CSV uses its space-separated time contract while JSON recipes retain LocalDateTime',()=>{const value=csv('DEMO-X',[{externalTransactionNo:'X',direction:'EXPENSE',amount:'0.10',transactionTime:'2026-10-09T12:00:00',description:'X'}]);assert.match(value,/2026-10-09 12:00:00/);assert.doesNotMatch(value,/2026-10-09T12:00:00/);});

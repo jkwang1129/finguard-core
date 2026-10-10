@@ -1,0 +1,13 @@
+[INFO] Running com.finguard.core.transaction.service.TransactionServiceImplTest
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.078 s -- in com.finguard.core.transaction.service.TransactionServiceImplTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 404, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  04:19 min
+[INFO] Finished at: 2026-10-09T20:49:07+08:00
+[INFO] ------------------------------------------------------------------------

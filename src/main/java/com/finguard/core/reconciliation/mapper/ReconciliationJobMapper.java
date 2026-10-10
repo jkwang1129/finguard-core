@@ -3,6 +3,10 @@ package com.finguard.core.reconciliation.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.finguard.core.reconciliation.entity.ReconciliationJob;
 import com.finguard.core.reconciliation.model.ReconciliationJobStatus;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.finguard.core.reconciliation.dto.ReconciliationJobQueryRequest;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -134,4 +138,13 @@ public interface ReconciliationJobMapper
             @Param("errorSummary") String errorSummary,
             @Param("finishedAt") LocalDateTime finishedAt
     );
+
+    default IPage<ReconciliationJob> selectHistory(Page<ReconciliationJob> page, ReconciliationJobQueryRequest request) {
+        var query = new LambdaQueryWrapper<ReconciliationJob>();
+        if (request.status()!=null) query.eq(ReconciliationJob::getStatus, request.status());
+        if (request.importJobId()!=null) query.eq(ReconciliationJob::getImportJobId, request.importJobId());
+        if (request.createdBy()!=null) query.eq(ReconciliationJob::getCreatedBy, request.createdBy());
+        query.orderByDesc(ReconciliationJob::getCreatedAt, ReconciliationJob::getId);
+        return selectPage(page, query);
+    }
 }

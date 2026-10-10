@@ -26,3 +26,8 @@ security/*.env
 
 # Week 6 Day 7 local acceptance artifacts
 scripts/acceptance/results/
+
+# Console-only acceptance dependencies and generated evidence
+scripts/demo/node_modules/
+scripts/demo/results/
+output/playwright/

@@ -2,7 +2,7 @@
 
 FinGuard Core 是一个 Java 后端个人项目：围绕“交易导入 → 自动对账 → 风险识别 → 人工审核 → 审计/统计”构建完整业务闭环，并用真实 MySQL、RabbitMQ、Redis、JWT/HTTP、Prometheus/Grafana、Docker、Linux 部署、性能与安全证据验收。
 
-当前状态：六周计划和 Week 6 Day 7 已完成。2026-08-13 新鲜基线为 Java 17 `mvn clean test` 379/379 通过；独立六服务环境全部 healthy，Flyway V11、OpenAPI 18 路径、Prometheus target `UP`，真实业务闭环和保留卷重启恢复通过。
+当前状态：六周计划已完成，2026-10-09 补齐业务控制台：27 个业务操作、29 个场景配方。Java 回归 404/404、Node 28/28，真实浏览器默认环境 44 项与配置变体 4 项通过；独立 Redis/MQ 演练通过。独立审查的重要问题已修复，并增加六项定向浏览器回归。环境与证据边界见 [控制台验收报告](docs/review/2026-10-09-complete-demo-console-acceptance.md)及[独立审查记录](docs/review/2026-10-09-console-independent-review.md)。原 Week 6 Day 7 的 2026-08-13 验收仍是历史基线。
 
 > 这是工程学习与求职展示项目，不是生产银行系统，不提供真实资金处理、生产 SLA、合规认证或灾备承诺。
 
@@ -47,18 +47,12 @@ flowchart LR
 
 要求：Java 17、Maven 3.9+、Docker Engine 与 Docker Compose。
 
-### 只启动依赖并运行测试
+### 运行隔离测试
 
-准备 `.env` 中的本机随机密码，并只在当前会话生成 JWT 密钥：
+要求 Docker Engine 可用。Spring 集成测试自动创建随机端口的 Testcontainers 中间件，不读取开发环境凭据，也不写入共享开发数据库。
 
 ```powershell
-Copy-Item .env.example .env
-$jwtBytes = New-Object byte[] 32
-$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-try { $rng.GetBytes($jwtBytes) } finally { $rng.Dispose() }
-$env:JWT_SECRET_BASE64 = [Convert]::ToBase64String($jwtBytes)
-docker compose up -d --wait mysql rabbitmq redis
-mvn clean test
+mvn.cmd -B -ntp clean test
 ```
 
 ### 启动六服务
@@ -117,7 +111,7 @@ Day 5 优化后 ECS 外部 JMeter 复测全部返回 401，已判定为 Token �
 - [架构说明](docs/ARCHITECTURE.md)
 - [数据库与 ER](docs/DATABASE.md)
 - [API 与权限/错误](docs/API.md)
-- [演示手册](docs/DEMO.md)
+- [交互式实时演示](http://127.0.0.1:8080/demo/index.html)（六服务栈全部 healthy 后可用）｜[演示手册：启动、账号与数据库写入说明](docs/DEMO.md)
 - [部署与回滚](docs/DEPLOYMENT.md)
 - [运维操作手册](docs/runbooks/README.md)
 - [故障演练记录](docs/incidents/README.md)
@@ -138,3 +132,22 @@ Day 5 优化后 ECS 外部 JMeter 复测全部返回 401，已判定为 Token �
 - Outbox、审计和业务表未实现长期归档/分区策略。
 - 安全验证不等于完整渗透或合规；供应链扫描数据需要每次发布刷新。
 - 性能证据只覆盖审计默认分页，不可外推到全部业务或真实生产规模。
+
+## 完整业务控制台
+
+打开同源 `/demo/index.html`，使用 ADMIN 与 REVIEWER 两个会话。控制台覆盖账户、人工交易、任意 CSV、导入/对账历史和逐笔结果、审核上下文与决定、完整审计、全库统计及工程入口；逐步演示提供 29 个真实 API 场景。当前接口为 20 个路径、27 个业务操作。
+
+先阅读 [覆盖清单](docs/DEMO_COVERAGE.md) 和 [本次验收](docs/review/2026-10-09-complete-demo-console-acceptance.md)。页面写入持久化数据库，刷新须重新登录。
+
+```powershell
+npm.cmd ci --prefix scripts/demo
+node scripts/demo/node_modules/playwright/cli.js install chromium
+powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -PreflightOnly
+powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1
+# 可选：本机已有 Chrome，且 JRE 已缓存时使用验收专用打包路径
+powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -UseCachedRuntime -BrowserChannel chrome
+# 另建独立 finguard-day6 栈，运行已有 Redis / MQ 演练；结束清理自有资源
+powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -UseCachedRuntime -EngineeringOnly
+```
+
+默认业务验收只操作 `finguard-console`、临时随机凭据和独立端口，清理前核对 labels 与完整容器 ID。工程模式另外使用 `finguard-day6`；任何资源或端口冲突会停止。两个模式按顺序运行。缓存打包路径核对 Maven Java 17，记录本机 JRE digest，不代替生产 Dockerfile 的发布构建验证。
