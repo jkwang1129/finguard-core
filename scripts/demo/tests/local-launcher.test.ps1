@@ -83,3 +83,5 @@ finally {
     Remove-Variable FinGuardLauncherCalls,FinGuardLauncherPluginUnavailable,FinGuardLauncherStandaloneWait -Scope Global
     # No production containers or user files are touched; the temporary fixture is retained.
 }
+# CI shells propagate LASTEXITCODE; the deliberately failed native call was asserted above.
+exit 0
