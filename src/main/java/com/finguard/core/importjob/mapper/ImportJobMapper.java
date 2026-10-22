@@ -2,6 +2,10 @@ package com.finguard.core.importjob.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.finguard.core.importjob.entity.ImportJob;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.finguard.core.importjob.dto.ImportJobQueryRequest;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -115,4 +119,12 @@ public interface ImportJobMapper extends BaseMapper<ImportJob> {
             @Param("errorSummary") String errorSummary,
             @Param("finishedAt") LocalDateTime finishedAt
     );
+
+    default IPage<ImportJob> selectHistory(Page<ImportJob> page, ImportJobQueryRequest request) {
+        var query = new LambdaQueryWrapper<ImportJob>();
+        if (request.status()!=null) query.eq(ImportJob::getStatus, request.status());
+        if (request.createdBy()!=null) query.eq(ImportJob::getCreatedBy, request.createdBy());
+        query.orderByDesc(ImportJob::getCreatedAt, ImportJob::getId);
+        return selectPage(page, query);
+    }
 }

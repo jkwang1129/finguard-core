@@ -4,6 +4,7 @@ import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.review.dto.ReviewDecisionRequest;
 import com.finguard.core.review.dto.ReviewTaskQueryRequest;
 import com.finguard.core.review.service.ReviewTaskService;
+import com.finguard.core.review.vo.ReviewTaskContextResponse;
 import com.finguard.core.review.vo.ReviewTaskResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,6 +46,13 @@ public class ReviewTaskController {
     public ReviewTaskResponse getById(
             @PathVariable @Positive Long reviewTaskId) {
         return reviewTaskService.getById(reviewTaskId);
+    }
+
+    @GetMapping("/{reviewTaskId}/context")
+    @Operation(summary = "Get sanitized review task context")
+    public ReviewTaskContextResponse getContext(
+            @PathVariable @Positive Long reviewTaskId) {
+        return reviewTaskService.getContext(reviewTaskId);
     }
 
     @PatchMapping("/{reviewTaskId}/decision")

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FinGuard Core 业务控制台</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside>
+        <div class="brand">FinGuard.Core</div>
+        <div class="caption">OPERATIONS / 实际业务数据</div>
+        <nav id="navigation" aria-label="工作区"></nav>
+      </aside>
+      <main>
+        <header class="topbar">
+          <h1 id="workspace-title">业务控制台</h1>
+          <div>
+            <label for="active-role">当前操作角色</label
+            ><select id="active-role">
+              <option>ADMIN</option>
+              <option>REVIEWER</option>
+            </select>
+          </div>
+        </header>
+        <div id="sessions" class="session-panels"></div>
+        <label class="ack"
+          ><input
+            type="checkbox"
+            id="persistence-ack"
+          />我已了解演示会写入当前数据库，数据不会自动清理</label
+        >
+        <div id="workspace"></div>
+        <details class="card">
+          <summary>最近操作记录</summary>
+          <ol id="events" class="event-feed"></ol>
+        </details>
+        <footer>
+          刷新后请重新登录。异步任务可从历史或 ID 找回；202
+          代表已受理，请等待真实终态。
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

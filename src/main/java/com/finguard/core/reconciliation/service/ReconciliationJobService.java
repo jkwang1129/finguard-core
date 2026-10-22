@@ -1,5 +1,6 @@
 package com.finguard.core.reconciliation.service;
 
+import com.finguard.core.reconciliation.dto.ReconciliationJobQueryRequest;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.reconciliation.dto.ReconciliationResultQueryRequest;
 import com.finguard.core.reconciliation.vo.ReconciliationJobResponse;
@@ -18,4 +19,5 @@ public interface ReconciliationJobService {
             Long reconciliationJobId,
             ReconciliationResultQueryRequest request
     );
+    PageResponse<ReconciliationJobResponse> query(ReconciliationJobQueryRequest request);
 }

@@ -2,6 +2,8 @@ package com.finguard.core.reconciliation.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.finguard.core.reconciliation.dto.ReconciliationJobQueryRequest;
+import com.finguard.core.reconciliation.mapper.ReconciliationJobMapper;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.reconciliation.dto.ReconciliationResultQueryRequest;
 import com.finguard.core.reconciliation.entity.ReconciliationJob;
@@ -20,12 +22,16 @@ import java.util.List;
 public class ReconciliationJobServiceImpl
         implements ReconciliationJobService {
 
+    private final ReconciliationJobMapper historyMapper;
+
     private final ReconciliationJobTransactionService transactionService;
     private final ReconciliationResultMapper reconciliationResultMapper;
 
     public ReconciliationJobServiceImpl(
             ReconciliationJobTransactionService transactionService,
-            ReconciliationResultMapper reconciliationResultMapper) {
+            ReconciliationResultMapper reconciliationResultMapper,
+            ReconciliationJobMapper historyMapper) {
+        this.historyMapper = historyMapper;
         this.transactionService = transactionService;
         this.reconciliationResultMapper = reconciliationResultMapper;
     }
@@ -135,5 +141,12 @@ public class ReconciliationJobServiceImpl
                 result.getReasonCode(),
                 result.getCreatedAt()
         );
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ReconciliationJobResponse> query(ReconciliationJobQueryRequest request) {
+        var page = historyMapper.selectHistory(new Page<>(request.page(), request.size()), request);
+        var records = page.getRecords().stream().map(job -> toResponse(job, false)).toList();
+        return new PageResponse<>(page.getCurrent(), page.getSize(), page.getTotal(), page.getPages(), records);
     }
 }

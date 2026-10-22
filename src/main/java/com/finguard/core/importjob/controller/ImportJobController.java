@@ -1,6 +1,7 @@
 package com.finguard.core.importjob.controller;
 
 import com.finguard.core.common.vo.PageResponse;
+import com.finguard.core.importjob.dto.ImportJobQueryRequest;
 import com.finguard.core.importjob.dto.ImportRowErrorQueryRequest;
 import com.finguard.core.importjob.exception.InvalidImportFileRequestException;
 import com.finguard.core.importjob.model.ImportFileRequestErrorCode;
@@ -128,5 +129,10 @@ public class ImportJobController {
         return separator < 0
                 ? normalized
                 : normalized.substring(separator + 1);
+    }
+    @GetMapping
+    @Operation(summary = "Query importjob job history")
+    public PageResponse<ImportJobResponse> query(@Valid @ModelAttribute ImportJobQueryRequest request) {
+        return importJobService.query(request);
     }
 }

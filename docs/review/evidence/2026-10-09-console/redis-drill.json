@@ -1,0 +1,10 @@
+﻿{
+    "ProjectName":  "finguard-day6",
+    "BaselineHealth":  200,
+    "BaselineStatistics":  200,
+    "OutageHealth":  503,
+    "OutageLogin":  200,
+    "OutageStatistics":  200,
+    "RecoveredHealth":  200,
+    "RecoveredStatistics":  200
+}

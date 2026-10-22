@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.finguard.core.reconciliation.model.ReconciliationResultType;
 import com.finguard.core.review.entity.ReviewTask;
+import com.finguard.core.review.model.ReviewTaskContextView;
 import com.finguard.core.review.model.ReviewTaskSourceType;
 import com.finguard.core.review.model.ReviewTaskStatus;
 import com.finguard.core.review.model.ReviewTaskView;
@@ -180,6 +181,50 @@ public interface ReviewTaskMapper extends BaseMapper<ReviewTask> {
             WHERE rt.id = #{reviewTaskId}
             """)
     ReviewTaskView selectTaskViewById(
+            @Param("reviewTaskId") Long reviewTaskId
+    );
+
+    @Select("""
+            SELECT rt.id AS reviewTaskId,
+                   rt.version AS reviewTaskVersion,
+                   rt.status AS reviewTaskStatus,
+                   rh.rule_code AS ruleCode,
+                   COALESCE(
+                       rh.reason_code,
+                       rr.reason_code
+                   ) AS taskReasonCode,
+                   rt.created_at AS reviewTaskCreatedAt,
+                   t.id AS transactionId,
+                   t.account_id AS accountId,
+                   t.amount AS transactionAmount,
+                   a.currency,
+                   t.transaction_time AS occurredAt,
+                   t.source AS transactionSourceType,
+                   rr.result_type AS reconciliationResultType,
+                   rr.match_method AS matchMethod,
+                   rr.reason_code AS reconciliationReasonCode,
+                   rh.observed_amount AS observedAmount,
+                   rh.threshold_amount AS thresholdAmount,
+                   rh.observed_count AS observedCount,
+                   rh.threshold_count AS thresholdCount,
+                   rh.window_seconds AS windowSeconds,
+                   a.status AS accountStatus,
+                   a.account_name AS accountDisplayName
+            FROM review_tasks rt
+            LEFT JOIN risk_hits rh
+              ON rh.id = rt.risk_hit_id
+            INNER JOIN reconciliation_results rr
+              ON rr.id = COALESCE(
+                  rt.reconciliation_result_id,
+                  rh.reconciliation_result_id
+              )
+            INNER JOIN transactions t
+              ON t.id = rr.csv_transaction_id
+            INNER JOIN accounts a
+              ON a.id = t.account_id
+            WHERE rt.id = #{reviewTaskId}
+            """)
+    ReviewTaskContextView selectContextById(
             @Param("reviewTaskId") Long reviewTaskId
     );
 

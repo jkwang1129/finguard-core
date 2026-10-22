@@ -8,6 +8,8 @@
 target
 docs
 scripts
+output
+tmp
 
 *.iml
 *.log

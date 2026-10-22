@@ -71,6 +71,13 @@ jobs:
       - name: Test and package
         run: mvn -B -ntp clean package
 
+      - name: Test demo frontend
+        run: node --test scripts/demo/tests/*.test.mjs
+
+      - name: Check local demo launchers
+        shell: pwsh
+        run: ./scripts/demo/tests/local-launcher.test.ps1
+
       - name: Build application image
         run: docker build --tag "finguard-core:${GITHUB_SHA}" .
 

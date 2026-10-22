@@ -2,6 +2,8 @@ package com.finguard.core.importjob.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.finguard.core.importjob.dto.ImportJobQueryRequest;
+import com.finguard.core.importjob.mapper.ImportJobMapper;
 import com.finguard.core.common.vo.PageResponse;
 import com.finguard.core.importjob.dto.ImportRowErrorQueryRequest;
 import com.finguard.core.importjob.entity.ImportJob;
@@ -22,6 +24,8 @@ import java.util.List;
 @Service
 public class ImportJobServiceImpl implements ImportJobService {
 
+    private final ImportJobMapper historyMapper;
+
     private final CsvImportFileParser fileParser;
     private final ImportJobTransactionService transactionService;
     private final ImportRowErrorMapper importRowErrorMapper;
@@ -29,7 +33,9 @@ public class ImportJobServiceImpl implements ImportJobService {
     public ImportJobServiceImpl(
             CsvImportFileParser fileParser,
             ImportJobTransactionService transactionService,
-            ImportRowErrorMapper importRowErrorMapper) {
+            ImportRowErrorMapper importRowErrorMapper,
+            ImportJobMapper historyMapper) {
+        this.historyMapper = historyMapper;
         this.fileParser = fileParser;
         this.transactionService = transactionService;
         this.importRowErrorMapper = importRowErrorMapper;
@@ -151,5 +157,12 @@ public class ImportJobServiceImpl implements ImportJobService {
                 error.getMessage(),
                 error.getCreatedAt()
         );
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ImportJobResponse> query(ImportJobQueryRequest request) {
+        var page = historyMapper.selectHistory(new Page<>(request.page(), request.size()), request);
+        var records = page.getRecords().stream().map(job -> toResponse(job, false)).toList();
+        return new PageResponse<>(page.getCurrent(), page.getSize(), page.getTotal(), page.getPages(), records);
     }
 }

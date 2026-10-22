@@ -1,0 +1,36 @@
+✔ account filters/paging, proper write verbs and cancellation (3.4101ms)
+✔ reviewer writes never sent (2.9406ms)
+✔ write failures are never retried and server 401 remains an API error (34.7806ms)
+✔ job polling reads only, preserves 202 receipt separately and stops at terminal (2.6788ms)
+✔ poll timeout retains last observed state (1.5174ms)
+✔ all pages includes item 101 and rejects malformed pagination (4.0674ms)
+✔ abort prevents stale result even if transport ignores signal (3.1609ms)
+✔ multipart has no manual content-type and credentials are omitted (1.5296ms)
+✔ amount precision is preserved when parsing server numeric JSON (0.5245ms)
+✔ metrics request accepts text/plain (0.4973ms)
+✔ CSV uses its space-separated time contract while JSON recipes retain LocalDateTime (3.6603ms)
+✔ URLs, exports and historical evidence are bounded (4.253ms)
+✔ empty metrics and failed health stay unverified (1.9332ms)
+✔ raw BOM/CRLF file preserved, double click guarded, explicit duplicate compares receipts (25.5944ms)
+✔ errors use only supported pagination, continuation only GET (1.4102ms)
+✔ batch includes second-page audit and cancellation remains incomplete (38.4869ms)
+✔ reviewer overview permitted and audit prohibited (0.615ms)
+✔ late A cannot overwrite B; disposal prevents all updates (2.9089ms)
+✔ validate terminal import, retain receipt and use only results server filters (5.0282ms)
+✔ amount mismatch recipe remains different for custom 101.01 and arbitrary decimal strings (6.9346ms)
+✔ role restriction, current version and conflict without implicit retry (2.9016ms)
+✔ recipes construct strong/weak, reserved candidate and risk windows (4.4161ms)
+✔ execution returns actual server state and never invents risk facts (0.6599ms)
+✔ version conflict probes pending task before a terminal decision (0.1531ms)
+✔ default recipes stay inside server CSV future-time limit including +4 day cases (3.0882ms)
+✔ identity comes from server, logout clears authorization and notifies cancellation (1.7234ms)
+✔ wrong-role login and late login after logout leave no credentials (0.5811ms)
+✔ decimal string, complete replacement, filters and CSV protection (1.9615ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 375.1488

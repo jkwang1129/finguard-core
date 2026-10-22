@@ -41,6 +41,10 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/demo/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
                                 "/actuator/health",
                                 "/actuator/prometheus"
                         ).permitAll()
@@ -53,16 +57,26 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/api/auth/me"
+                        ).authenticated()
+                        .requestMatchers(
+                                HttpMethod.GET,
                                 "/api/audit-logs"
                         ).hasRole(RoleCode.ADMIN.name())
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/review-tasks/*/context"
+                        ).hasRole(RoleCode.REVIEWER.name())
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/accounts",
                                 "/api/accounts/*",
                                 "/api/transactions",
                                 "/api/transactions/*",
+                                "/api/import-jobs",
                                 "/api/import-jobs/*",
                                 "/api/import-jobs/*/errors",
+                                "/api/reconciliation-jobs",
                                 "/api/reconciliation-jobs/*",
                                 "/api/reconciliation-jobs/*/results",
                                 "/api/review-tasks",
