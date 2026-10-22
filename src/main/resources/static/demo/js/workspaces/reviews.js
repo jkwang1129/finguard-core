@@ -164,21 +164,30 @@ export function mount(root, ctx) {
       {
         name: "status",
         label: "状态",
-        options: [common.all, "PENDING", "CONFIRMED", "IGNORED"],
+        options: [
+          common.all,
+          ["PENDING", "PENDING — 待审核"],
+          ["CONFIRMED", "CONFIRMED — 已确认"],
+          ["IGNORED", "IGNORED — 已忽略"],
+        ],
       },
       {
         name: "sourceType",
         label: "来源类型",
-        options: [common.all, "RECONCILIATION_EXCEPTION", "RISK_HIT"],
+        options: [
+          common.all,
+          ["RECONCILIATION_EXCEPTION", "RECONCILIATION_EXCEPTION — 对账异常"],
+          ["RISK_HIT", "RISK_HIT — 风险命中"],
+        ],
       },
       {
         name: "resultType",
         label: "对账结果",
         options: [
           common.all,
-          "UNMATCHED",
-          "DUPLICATE",
-          "SUSPICIOUS",
+          ["UNMATCHED", "UNMATCHED — 未匹配"],
+          ["DUPLICATE", "DUPLICATE — 重复"],
+          ["SUSPICIOUS", "SUSPICIOUS — 可疑"],
         ],
       },
       {
@@ -186,9 +195,9 @@ export function mount(root, ctx) {
         label: "风险规则",
         options: [
           common.all,
-          "LARGE_AMOUNT",
-          "POSSIBLE_DUPLICATE",
-          "FREQUENT_TRANSACTION",
+          ["LARGE_AMOUNT", "LARGE_AMOUNT — 大额交易"],
+          ["POSSIBLE_DUPLICATE", "POSSIBLE_DUPLICATE — 疑似重复"],
+          ["FREQUENT_TRANSACTION", "FREQUENT_TRANSACTION — 高频交易"],
         ],
       },
     ],

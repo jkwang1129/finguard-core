@@ -30,6 +30,42 @@ export const scenarioNames = [
   "REVIEWER_WRITE_403",
   "ADMIN_DECISION_403",
 ];
+const scenarioLabels = {
+  GUIDED: "引导式完整演示",
+  IMPORT_SUCCESS: "导入成功（全部合法行）",
+  IMPORT_PARTIAL: "部分导入成功（含非法行）",
+  IMPORT_FILE_FAILED: "文件级导入失败（表头错误）",
+  FILE_DUPLICATE: "文件重复去重",
+  ROW_DUPLICATE: "数据行重复",
+  EXACT: "精确匹配",
+  STRONG_TOLERANCE: "强键容差匹配（时间差3天）",
+  WEAK_TOLERANCE: "弱键容差匹配（流水号不同）",
+  NO_CANDIDATE: "无候选（未匹配）",
+  MULTIPLE_CANDIDATES: "多个候选",
+  MANUAL_ALREADY_MATCHED: "人工交易已被匹配",
+  DIRECTION_MISMATCH: "方向不一致",
+  AMOUNT_MISMATCH: "金额不一致",
+  TIME_OUT_OF_RANGE: "时间超出范围",
+  LARGE_AMOUNT: "大额交易命中",
+  LARGE_AMOUNT_BELOW: "低于大额阈值",
+  LARGE_AMOUNT_BOUNDARY: "大额阈值边界",
+  POSSIBLE_DUPLICATE: "疑似重复交易",
+  DUPLICATE_OUTSIDE_WINDOW: "窗口外重复（不命中）",
+  FREQUENT_TRANSACTION: "高频交易命中",
+  FREQUENT_BELOW: "低于高频阈值",
+  CONFIRMED: "审核确认",
+  IGNORED: "审核忽略",
+  VERSION_CONFLICT: "版本冲突",
+  TERMINAL_DECISION: "终态保护",
+  ANONYMOUS_401: "匿名访问被拒",
+  REVIEWER_WRITE_403: "审核员越权写入",
+  ADMIN_DECISION_403: "管理员越权审核",
+};
+// 下拉框选项：value 仍提交英文场景名，label 附加中文说明，便于演示识别。
+export const scenarioOptions = scenarioNames.map((name) => [
+  name,
+  `${name} — ${scenarioLabels[name]}`,
+]);
 const header =
   "account_no,external_transaction_no,direction,amount,transaction_time,description";
 function quote(value) {

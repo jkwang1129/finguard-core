@@ -132,12 +132,21 @@ export function mount(root, ctx) {
       {
         name: "status",
         label: "状态",
-        options: [common.all, "ACTIVE", "DISABLED"],
+        options: [
+          common.all,
+          ["ACTIVE", "ACTIVE — 启用"],
+          ["DISABLED", "DISABLED — 停用"],
+        ],
       },
       {
         name: "accountType",
         label: "类型",
-        options: [common.all, "BANK", "CASH", "PAYMENT_PLATFORM"],
+        options: [
+          common.all,
+          ["BANK", "BANK — 银行"],
+          ["CASH", "CASH — 现金"],
+          ["PAYMENT_PLATFORM", "PAYMENT_PLATFORM — 支付平台"],
+        ],
       },
     ],
     query: a.query,
@@ -163,7 +172,11 @@ export function mount(root, ctx) {
         {
           name: "accountType",
           label: "账户类型",
-          options: ["BANK", "CASH", "PAYMENT_PLATFORM"],
+          options: [
+            ["BANK", "BANK — 银行"],
+            ["CASH", "CASH — 现金"],
+            ["PAYMENT_PLATFORM", "PAYMENT_PLATFORM — 支付平台"],
+          ],
         },
       ],
       (v, b) =>

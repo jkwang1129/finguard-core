@@ -9,7 +9,7 @@ import {
 } from "../ui.js";
 import {
   buildScenario,
-  scenarioNames,
+  scenarioOptions,
   executeScenarioStep,
   csv,
 } from "../scenarios.js";
@@ -123,7 +123,7 @@ export function mount(root, ctx) {
     intro,
     "预览场景",
     [
-      { name: "name", label: "业务场景", options: scenarioNames },
+      { name: "name", label: "业务场景", options: scenarioOptions },
       { name: "amount", label: "人工金额", value: "100.00", required: true },
       {
         name: "csvAmount",

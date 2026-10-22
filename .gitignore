@@ -5,8 +5,14 @@ target/
 .vscode/
 
 .env
-.env.linux
+.env.*
+!.env.example
+!.env.linux.example
 .deploy-state/
+
+# Local documents, generated previews, and runtime files
+/output/
+/tmp/
 
 *.log
 .DS_Store

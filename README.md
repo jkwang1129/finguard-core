@@ -55,6 +55,21 @@ flowchart LR
 mvn.cmd -B -ntp clean test
 ```
 
+### 本地启动业务控制台（Windows）
+
+先将 `.env.example` 复制为 `.env`，填写各服务密码和至少 32 字节密钥的 Base64 编码。首次需要创建演示账号时，在本地 `.env` 中显式配置 `FINGUARD_AUTH_BOOTSTRAP_ENABLED=true` 及 ADMIN/REVIEWER 的用户名和密码；不要提交实际配置。
+
+配置 Java 17 的 `JAVA_HOME`，将 Maven 3.9+ 加入 `PATH`（或设置 `MAVEN_HOME`），启动 Docker 后执行：
+
+```powershell
+powershell -NoProfile -File scripts/demo/start-demo.ps1 -DryRun
+powershell -NoProfile -File scripts/demo/start-demo.ps1
+```
+
+脚本兼容 `docker compose` 与 `docker-compose` 两种命令形式，要求现代 Compose 支持 `up --wait`（旧版 v1 不支持）；预检会在启动前检查此能力。脚本启动三个依赖及当前仓库源码中的应用。打开 `http://127.0.0.1:8080/demo/index.html#guided`，按 [完整操作指南](docs/DEMO_OPERATING_GUIDE.md) 演示。8080 为默认端口，已有应用监听时需先确认进程，或通过 `SERVER_PORT` 为新应用选择其他端口。
+
+`-DepsOnly` 只启动依赖；`-SkipDependencies` 使用已有依赖。Ctrl+C 停止前台应用，`scripts/demo/stop-demo.ps1 -StopOnly` 停止容器并保留数据。两个脚本均支持不启动、不停止服务的 `-DryRun`。
+
 ### 启动六服务
 
 ```powershell
@@ -120,7 +135,6 @@ Day 5 优化后 ECS 外部 JMeter 复测全部返回 401，已判定为 Token �
 - [性能报告](docs/PERFORMANCE_REPORT.md)
 - [安全测试摘要](docs/SECURITY_TEST_REPORT.md)
 - [面试笔记](docs/INTERVIEW_NOTES.md)
-- [简历表述](docs/RESUME.md)
 - [Week 6 最终复盘](docs/review/week6-review.md)
 - [任务路线](TASKS.md) / [项目范围](PROJECT_BRIEF.md)
 

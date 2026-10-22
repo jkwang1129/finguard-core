@@ -60,7 +60,10 @@ const fields = (row) => [
   {
     name: "direction",
     label: "方向",
-    options: ["INCOME", "EXPENSE"],
+    options: [
+      ["INCOME", "INCOME — 收入"],
+      ["EXPENSE", "EXPENSE — 支出"],
+    ],
     value: row?.direction ?? "EXPENSE",
   },
   {
@@ -152,12 +155,20 @@ export function mount(root, ctx) {
       {
         name: "direction",
         label: "方向",
-        options: [common.all, "INCOME", "EXPENSE"],
+        options: [
+          common.all,
+          ["INCOME", "INCOME — 收入"],
+          ["EXPENSE", "EXPENSE — 支出"],
+        ],
       },
       {
         name: "source",
         label: "来源",
-        options: [common.all, "MANUAL", "CSV_IMPORT"],
+        options: [
+          common.all,
+          ["MANUAL", "MANUAL — 人工录入"],
+          ["CSV_IMPORT", "CSV_IMPORT — CSV 导入"],
+        ],
       },
       { name: "externalTransactionNo", label: "外部流水号" },
       { name: "startTime", label: "起始时间", type: "datetime-local" },
