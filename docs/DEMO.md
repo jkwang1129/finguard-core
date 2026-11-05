@@ -8,7 +8,7 @@
 
 ## 2. 演示前检查
 
-推荐使用本地六服务或 Day 7 隔离验收环境。开始前确认：
+推荐使用本地六服务或隔离验收环境。开始前确认：
 
 ```powershell
 docker compose ps
@@ -35,13 +35,13 @@ Invoke-RestMethod http://127.0.0.1:3000/api/health
 
 开始任何写入前，勾选“我已了解演示会写入当前数据库”。逐步演示通过“生成并预览场景”创建唯一批次，显示将创建的数据，并逐个执行步骤。刷新需要重新登录；演示数据会保留在数据库。原四个调参输入及当前默认值见下文“完整控制台工作区”。
 
-交互页面之外，仍可按下文继续用 Swagger UI 手动逐步调用，也可运行隔离的 Week 6 Day 7 验收脚本做一键证明；两种流程都保留。
+交互页面之外，仍可按下文继续用 Swagger UI 手动逐步调用，也可运行隔离的全链路验收脚本做一键证明；两种流程都保留。
 
 如只需要一键证明而不做现场讲解，执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-week6-day7-acceptance.ps1 -PreflightOnly
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-week6-day7-acceptance.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-local-acceptance.ps1 -PreflightOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-local-acceptance.ps1
 ```
 
 脚本只操作 `finguard-day7` 隔离项目，结束后自动清理。
@@ -102,7 +102,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-we
 - PromQL 暂无数据：先完成一次业务流，再等待一个 scrape interval；Counter 没有事件时为空是正常的。
 - REVIEWER 决策 409：重新获取任务详情和当前 version，说明另一个请求已经改变状态。
 - Swagger 状态丢失：重新登录并只在浏览器内设置 Token；不要把 Token 放入脚本、截图或聊天。
-- 现场环境异常：展示最后一次[Week 6 最终复盘](review/week6-review.md)中的验收表，同时明确它是历史证据，不冒充当前在线状态。
+- 现场环境异常：展示最后一次[测试与验证](VALIDATION.md)中的验收表，同时明确它是历史证据，不冒充当前在线状态。
 
 ## 5. 演示后清理
 
@@ -118,4 +118,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-we
 
 场景区提供完整对账原因、三条规则和边界、文件与业务行去重、两种决定、版本冲突、终态拒绝和权限拒绝。预期是配方条件；实际事实始终来自 API。风险规则默认配置仅作说明，非默认阈值或关闭规则可能返回无命中。
 
-工程区采集同源 health/prometheus，提供可配置监控链接和维护者隔离演练步骤。浏览器不启动 Docker，不持有服务凭据。旧报告注明原时间/环境；没有当次证据的演练标为未验证。覆盖与当前验收结果见 `docs/DEMO_COVERAGE.md` 和 `docs/review/2026-10-09-complete-demo-console-acceptance.md`。
+工程区采集同源 health/prometheus，提供可配置监控链接和维护者隔离演练步骤。浏览器不启动 Docker，不持有服务凭据。旧报告注明原时间/环境；没有当次证据的演练标为未验证。功能与验证范围见 [功能覆盖](DEMO_COVERAGE.md) 和 [测试与验证](VALIDATION.md)。

@@ -2,7 +2,7 @@
 
 ## 1. 系统定位与边界
 
-FinGuard Core 是一个用于 Java 后端工程训练的个人项目：把账户、交易、CSV 异步导入、自动对账、风险命中、人工审核、审计和统计串成可运行闭环，并补齐容器、监控、部署、性能和安全验证。它不是银行核心系统，也不承诺生产 SLA、灾备等级或合规认证。
+FinGuard Core 是一个交易对账与风险审核平台：把账户、交易、CSV 异步导入、自动对账、风险命中、人工审核、审计和统计串成可运行闭环，并补齐容器、监控、部署、性能和安全验证。它不是银行核心系统，也不承诺生产 SLA、灾备等级或合规认证。
 
 应用保持单体边界，以 MySQL 为业务事实真源；RabbitMQ 负责异步传递，Redis 只承载缓存和限流，Prometheus/Grafana 只负责观测。任何缓存或消息都不能替代数据库中的任务状态、幂等键和审计事实。
 
@@ -22,26 +22,102 @@ flowchart LR
 
 ## 3. 核心业务流
 
+业务全貌见 [首页业务流程图](../README.md#业务流程)。以下时序图展开异步导入与审核并发的关键边界。API、Outbox Relay 和消费者是同一 Spring Boot 应用内的不同职责，图中拆开仅为说明交互。
+
+### 3.1 异步导入与消息幂等
+
 ```mermaid
 sequenceDiagram
-    participant A as ADMIN
-    participant API as Spring Boot
+    actor A as ADMIN
+    participant API as 导入 API
     participant DB as MySQL
+    participant Relay as Outbox Relay
     participant MQ as RabbitMQ
-    participant R as REVIEWER
+    participant Consumer as 导入消费者
 
     A->>API: 上传 CSV
-    API->>DB: 同事务写 import_job、原文件、outbox、审计
-    API-->>A: 202 + importJobId
-    API->>MQ: Outbox Relay 发布 IMPORT_REQUESTED
-    MQ->>API: 消费、校验、批量写交易、手动 ACK
-    A->>API: 创建对账任务
-    API->>DB: 同事务写 reconciliation_job + outbox
-    API->>MQ: 发布 RECONCILIATION_REQUESTED
-    MQ->>API: 对账、风险规则、审核任务、审计同事务落库
-    R->>API: 携带 version 提交确认/忽略
-    API->>DB: 条件更新审核状态并写审计
+    API->>API: 检查文件并计算 SHA-256
+    API->>DB: 查询同账户、同哈希的已有任务
+    alt 文件已受理
+        DB-->>API: 返回已有任务
+        API-->>A: 200 OK + 原任务 ID + duplicateFile
+    else 新文件
+        API->>DB: 同事务写任务、原文件、Outbox、受理审计
+        DB-->>API: 提交成功
+        API-->>A: 202 Accepted + 新任务 ID
+        Note over API,Relay: HTTP 返回与后台 Relay 调度独立
+        Relay->>DB: 查询到期的待发布事件
+        DB-->>Relay: 返回 Outbox 事件
+        Relay->>MQ: 发布 IMPORT_REQUESTED
+        MQ-->>Relay: 发布确认且未被退回
+        Relay->>DB: 标记 Outbox 为 SENT
+        MQ->>Consumer: 投递导入消息
+        Consumer->>DB: 开启事务，锁定任务并检查状态
+        alt 任务已是终态
+            DB-->>Consumer: 幂等返回，结束事务
+        else 待处理或待恢复
+            Consumer->>DB: 解析校验、写交易与行错误、更新终态
+            DB-->>Consumer: 提交成功
+        end
+        Consumer->>MQ: 事务完成后手动 ACK
+    end
+    A->>API: GET 按 ID 查询任务及错误明细
+    API->>DB: 读取持久化任务状态
+    DB-->>API: 返回当前状态与计数
+    API-->>A: 返回实际状态；未结束时继续轮询
 ```
+
+新文件并发受理的最终去重由数据库唯一约束兜底；消息可能在发布后、Outbox 标记前被消费者收到。图中发布确认、标记与消费的顺序展示一种正常执行过程，不表示它们构成跨 MySQL / RabbitMQ 的原子事务。HTTP 202 只表示受理，任务终态为 `SUCCESS`、`PARTIAL_SUCCESS` 或 `FAILED`。
+
+### 3.2 自动对账、风险识别与人工审核
+
+```mermaid
+sequenceDiagram
+    actor A as ADMIN
+    participant App as Spring Boot
+    participant DB as MySQL
+    participant MQ as RabbitMQ
+    actor R as REVIEWER
+
+    A->>App: 对已就绪的导入任务发起对账
+    App->>DB: 校验成功或部分成功，且存在有效交易
+    App->>DB: 同事务创建对账任务与 Outbox
+    DB-->>App: 提交成功
+    App-->>A: 202 Accepted + reconciliationJobId
+    App->>MQ: 后台 Relay 发布 RECONCILIATION_REQUESTED
+    MQ->>App: 对账消费者收到消息
+    App->>DB: 开启事务，锁定任务并检查终态
+    App->>DB: 读取导入交易与人工交易候选
+    App->>App: 匹配交易，计算大额、疑似重复、高频风险
+    App->>DB: 保存对账结果、风险命中与待审核任务
+    App->>DB: 更新 COMPLETED，写对账审计并提交
+    DB-->>App: 提交成功
+    App->>MQ: 手动 ACK
+
+    opt 生成了待审核任务
+        R->>App: 查询审核任务及交易上下文
+        App->>DB: 读取任务、version 与关联业务事实
+        DB-->>App: 返回审核上下文
+        App-->>R: 返回待审核任务及 version
+        R->>App: 提交 CONFIRMED 或 IGNORED，并携带 version
+        App->>DB: 查询当前任务状态与版本
+        alt 已是终态，或版本已过期
+            App-->>R: 409，拒绝重复决定或版本冲突
+        else 状态与版本匹配
+            App->>DB: 按 id、PENDING、version 条件更新
+            alt 更新成功
+                App->>DB: 同事务写审核审计并提交
+                DB-->>App: 提交成功
+                App-->>R: 返回审核终态与递增后的版本
+            else 并发请求已抢先更新
+                App->>DB: 回滚当前事务
+                App-->>R: 409 版本冲突
+            end
+        end
+    end
+```
+
+导入就绪后仍需 ADMIN 主动发起对账。`UNMATCHED`、`DUPLICATE`、`SUSPICIOUS` 对账结果与风险命中分别生成审核任务；同一交易可能关联多项待审核任务。审核只更新审核结论，不改写原始交易和对账结果。上述业务变更通过提交后事件使统计缓存失效，读取统计时按需回源 MySQL。
 
 ## 4. 一致性与可靠性
 

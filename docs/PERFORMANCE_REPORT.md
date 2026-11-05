@@ -46,4 +46,4 @@ INDEX idx_audit_logs_created_id (created_at DESC, id DESC)
 
 ## 6. 清理与复现
 
-合成数据清理后 `D5PERF_` 导入任务和审计记录均为 0，原有 2 条审计保留。复现入口和 SQL/JMX 见 `performance/`；完整原始记录见[Week 6 Day 5 验收](review/week6-day5-performance-acceptance.md)。
+合成数据清理后 `D5PERF_` 导入任务和审计记录均为 0，原有 2 条审计保留。复现命令和 SQL/JMX 见 [压测工具说明](../performance/README.md)。

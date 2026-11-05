@@ -1,167 +1,165 @@
 # FinGuard Core
 
-FinGuard Core 是一个 Java 后端个人项目：围绕“交易导入 → 自动对账 → 风险识别 → 人工审核 → 审计/统计”构建完整业务闭环，并用真实 MySQL、RabbitMQ、Redis、JWT/HTTP、Prometheus/Grafana、Docker、Linux 部署、性能与安全证据验收。
+基于 Spring Boot 的交易对账与风险审核平台，覆盖 **交易导入 → 自动对账 → 风险识别 → 人工审核 → 审计与统计** 的完整业务流程。
 
-当前状态：六周计划已完成，2026-10-09 补齐业务控制台：27 个业务操作、29 个场景配方。Java 回归 404/404、Node 28/28，真实浏览器默认环境 44 项与配置变体 4 项通过；独立 Redis/MQ 演练通过。独立审查的重要问题已修复，并增加六项定向浏览器回归。环境与证据边界见 [控制台验收报告](docs/review/2026-10-09-complete-demo-console-acceptance.md)及[独立审查记录](docs/review/2026-10-09-console-independent-review.md)。原 Week 6 Day 7 的 2026-08-13 验收仍是历史基线。
+提供调用真实后端 API 的业务控制台，以及自动化测试、容器部署和监控配置。
 
-> 这是工程学习与求职展示项目，不是生产银行系统，不提供真实资金处理、生产 SLA、合规认证或灾备承诺。
+**技术栈：** Java 17 · Spring Boot · Spring Security / JWT · MyBatis · MySQL · RabbitMQ · Redis · Flyway · Docker Compose · Prometheus / Grafana · GitHub Actions
 
-## 架构概览
+## 业务功能
+
+| 模块 | 能力 |
+| --- | --- |
+| 账户与交易 | 账户管理、人工交易、条件筛选、分页与软删除 |
+| 文件导入 | CSV 校验、文件哈希去重、异步处理、逐行错误与任务查询 |
+| 自动对账 | 精确与容差匹配，输出匹配、未匹配、重复和可疑结果 |
+| 风险审核 | 大额、疑似重复、高频交易规则，独立审核角色与决策记录 |
+| 审计与统计 | 关键操作留痕、业务聚合统计、缓存与失效处理 |
+| 业务控制台 | 账户、交易、导入、对账、审核、审计统计及逐步场景演示 |
+
+## 业务流程
+
+```mermaid
+flowchart TD
+    A["ADMIN：准备账户与人工交易"] --> B["上传交易 CSV"]
+    B --> C["异步导入：校验、去重、交易入库"]
+    C --> D{"导入成功或部分成功<br/>且有有效交易？"}
+    D -->|是| E["ADMIN：发起对账"]
+    D -->|否| F["查看错误明细，修正后重新上传"]
+    E --> G["自动匹配交易，并执行风险规则"]
+    G --> H{"存在对账异常或风险命中？"}
+    H -->|是| I["生成待审核任务"]
+    I --> J["REVIEWER：查看上下文，确认或忽略"]
+    H -->|否| K["查看对账结果与业务统计"]
+    J --> K
+    B -.-> L["审计留痕：导入受理、对账完成、审核决定等"]
+    G -.-> L
+    J -.-> L
+```
+
+对账由 ADMIN 在导入就绪后主动发起；对账异常与风险规则命中均可生成审核任务。审核决定保留原始交易和对账结果，另行记录处理结论。
+
+<details>
+<summary><strong>查看核心业务时序图</strong></summary>
+
+下面展示正常业务链路。Outbox Relay 与消息消费者均运行在同一 Spring Boot 应用内；后台消息发布与 HTTP 响应独立进行。
+
+```mermaid
+sequenceDiagram
+    actor A as ADMIN
+    participant App as Spring Boot
+    participant DB as MySQL
+    participant MQ as RabbitMQ
+    actor R as REVIEWER
+
+    A->>App: 上传 CSV
+    App->>DB: 同事务保存导入任务、原文件、Outbox、审计
+    DB-->>App: 提交成功
+    App-->>A: 202 Accepted + importJobId
+    App->>MQ: 后台 Relay 发布导入消息
+    MQ->>App: 投递给导入消费者
+    App->>DB: 校验并写入交易、行错误、任务终态
+    DB-->>App: 提交成功
+    App->>MQ: 手动 ACK
+    A->>App: 按 ID 轮询，确认导入就绪
+
+    A->>App: 发起对账
+    App->>DB: 同事务保存对账任务与 Outbox
+    App-->>A: 202 Accepted + reconciliationJobId
+    App->>MQ: 后台 Relay 发布对账消息
+    MQ->>App: 投递给对账消费者
+    App->>DB: 同事务保存结果、风险、审核任务、终态与审计
+    DB-->>App: 提交成功
+    App->>MQ: 手动 ACK
+
+    opt 生成了待审核任务
+        R->>App: 查看审核上下文，携带 version 提交决定
+        App->>DB: 条件更新审核状态，同事务写审计
+        DB-->>App: 提交成功
+        App-->>R: 返回审核决定与新版本
+    end
+    A->>App: 查询对账结果、审计与统计
+```
+
+文件重复、消息重投与审核冲突分支见 [架构说明](docs/ARCHITECTURE.md#3-核心业务流)。
+
+</details>
+
+## 架构与关键设计
 
 ```mermaid
 flowchart LR
-    User["ADMIN / REVIEWER"] -->|"JWT + HTTP"| App["Spring Boot 3.5"]
-    App --> MySQL[("MySQL：事实真源")]
-    App <--> MQ["RabbitMQ：异步任务"]
-    App <--> Redis[("Redis：缓存/限流")]
+    User["业务控制台 / API 客户端"] -->|"JWT + HTTP"| App["Spring Boot 模块化单体"]
+    App --> MySQL[("MySQL：业务事实与审计")]
+    App <--> MQ["RabbitMQ：异步导入与对账"]
+    App <--> Redis[("Redis：缓存与限流")]
     Prom["Prometheus"] --> App
     Grafana["Grafana"] --> Prom
 ```
 
-```mermaid
-flowchart LR
-    Upload["CSV 上传"] --> Import["异步导入"] --> Recon["自动对账"]
-    Recon --> Risk["风险规则"] --> Review["REVIEWER 决策"]
-    Import --> Audit["审计日志"]
-    Recon --> Audit
-    Review --> Audit
-    Audit --> Stats["统计 / 监控"]
-```
+- **异步可靠性：** 业务任务与 Outbox 事件同事务提交；消费者结合任务行锁、终态幂等、数据库唯一约束和手动 ACK 处理重复投递，失败采用有限重试与死信队列。
+- **并发审核：** 使用状态与版本号条件更新，防止重复决策和并发覆盖；ADMIN 管理业务，REVIEWER 负责审核。
+- **缓存降级：** MySQL 保存权威状态，Redis 用于统计缓存和固定窗口限流；故障时统计回源、限流 fail-open。
+- **工程交付：** Flyway 管理数据库迁移，Testcontainers 隔离集成测试，CI 构建并发布完整 Git SHA 镜像，Linux 脚本支持保留数据卷的应用回滚。
 
-核心取舍：MySQL 保持业务真源；Transactional Outbox 保证任务与待发事件同事务提交；消费者依靠行锁、终态幂等、唯一约束和手动 ACK；Redis 故障时统计回源、限流 fail-open；监控标签保持低基数且不包含敏感数据。
+设计取舍见 [架构说明](docs/ARCHITECTURE.md) 与 [架构决策](docs/adr/README.md)。
 
-## 已实现能力
+## 快速运行
 
-- 账户与人工交易 CRUD、软删除、稳定分页和数据库唯一约束；
-- BCrypt 登录、两小时 HS256 JWT、无状态认证与 ADMIN/REVIEWER RBAC；
-- 严格 UTF-8/RFC 4180 CSV 校验、SHA-256 文件幂等、原文件持久化；
-- Transactional Outbox、RabbitMQ 异步导入/对账、5 秒/30 秒有限重试、DLQ；
-- 精确/容差对账，`MATCHED/UNMATCHED/DUPLICATE/SUSPICIOUS` 结果；
-- 大额、疑似重复、高频交易规则，审核任务和乐观锁决策；
-- 不可变业务审计、MySQL 聚合统计、Redis JSON 缓存和固定窗口限流；
-- OpenAPI/Swagger、非 root Java 17 镜像、六服务 Compose、GitHub Actions；
-- Micrometer、Prometheus、Grafana 9 面板、Linux 不可变 SHA 部署与保留卷回滚；
-- 真实 SQL/JMeter/Prometheus 性能证据、安全扫描和三类故障演练。
+环境要求：Java 17、Maven 3.9+、Docker Engine 与支持 `up --wait` 的 Docker Compose。
 
-## 快速开始
-
-要求：Java 17、Maven 3.9+、Docker Engine 与 Docker Compose。
-
-### 运行隔离测试
-
-要求 Docker Engine 可用。Spring 集成测试自动创建随机端口的 Testcontainers 中间件，不读取开发环境凭据，也不写入共享开发数据库。
+1. 将 `.env.example` 复制为 `.env`，填写服务密码和 JWT 密钥（至少 32 字节随机密钥的 Base64 编码）。
+2. 首次创建演示账号时，在本地 `.env` 启用 `FINGUARD_AUTH_BOOTSTRAP_ENABLED=true`，并配置 ADMIN / REVIEWER 两组用户名与密码，变量见 [账号配置](docs/DEMO.md)。
+3. 构建并启动：
 
 ```powershell
-mvn.cmd -B -ntp clean test
-```
-
-### 本地启动业务控制台（Windows）
-
-先将 `.env.example` 复制为 `.env`，填写各服务密码和至少 32 字节密钥的 Base64 编码。首次需要创建演示账号时，在本地 `.env` 中显式配置 `FINGUARD_AUTH_BOOTSTRAP_ENABLED=true` 及 ADMIN/REVIEWER 的用户名和密码；不要提交实际配置。
-
-配置 Java 17 的 `JAVA_HOME`，将 Maven 3.9+ 加入 `PATH`（或设置 `MAVEN_HOME`），启动 Docker 后执行：
-
-```powershell
-powershell -NoProfile -File scripts/demo/start-demo.ps1 -DryRun
-powershell -NoProfile -File scripts/demo/start-demo.ps1
-```
-
-脚本兼容 `docker compose` 与 `docker-compose` 两种命令形式，要求现代 Compose 支持 `up --wait`（旧版 v1 不支持）；预检会在启动前检查此能力。脚本启动三个依赖及当前仓库源码中的应用。打开 `http://127.0.0.1:8080/demo/index.html#guided`，按 [完整操作指南](docs/DEMO_OPERATING_GUIDE.md) 演示。8080 为默认端口，已有应用监听时需先确认进程，或通过 `SERVER_PORT` 为新应用选择其他端口。
-
-`-DepsOnly` 只启动依赖；`-SkipDependencies` 使用已有依赖。Ctrl+C 停止前台应用，`scripts/demo/stop-demo.ps1 -StopOnly` 停止容器并保留数据。两个脚本均支持不启动、不停止服务的 `-DryRun`。
-
-### 启动六服务
-
-```powershell
-docker compose config --quiet
 docker compose up -d --build --wait
 docker compose ps
 ```
 
-入口：
+| 入口 | 地址 |
+| --- | --- |
+| 业务控制台 | [打开控制台](http://127.0.0.1:8080/demo/index.html) |
+| Swagger UI | [查看接口](http://127.0.0.1:8080/swagger-ui/index.html) |
+| 应用健康 | [健康检查](http://127.0.0.1:8080/actuator/health) |
+| Prometheus | [指标查询](http://127.0.0.1:9090) |
+| Grafana | [监控面板](http://127.0.0.1:3000) |
 
-- 应用健康：`http://127.0.0.1:8080/actuator/health`
-- Swagger UI：`http://127.0.0.1:8080/swagger-ui/index.html`
-- Prometheus：`http://127.0.0.1:9090`
-- Grafana：`http://127.0.0.1:3000`
+在控制台分别登录两个角色，按 [操作指南](docs/DEMO_OPERATING_GUIDE.md) 完成导入、对账和审核。页面操作会写入当前数据库。停止服务并保留数据使用 `docker compose down`。
 
-安全停止并保留数据：
+Windows 源码启动、独立验收与 Linux 部署见 [演示手册](docs/DEMO.md)、[测试与验证](docs/VALIDATION.md) 和 [部署手册](docs/DEPLOYMENT.md)。
 
-```powershell
-docker compose down
-Remove-Item Env:JWT_SECRET_BASE64
-```
+## 测试
 
-不要把真实密码/JWT 写入仓库或命令输出；日常停止不要执行 `docker compose down -v`。
-
-### Day 7 隔离验收
-
-先检查资源边界，再执行真实验收：
+Docker Engine 可用时，Java 集成测试会自动创建隔离的 Testcontainers 中间件：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/tests/test-week6-day7-acceptance.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-week6-day7-acceptance.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-week6-day7-acceptance.ps1 -PreflightOnly
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance/invoke-week6-day7-acceptance.ps1
+mvn.cmd -B -ntp clean test
+node --test scripts/demo/tests/*.test.mjs
 ```
 
-真实模式只操作固定 `finguard-day7` Compose project 和隔离端口，运行结束在 `finally` 清理其容器、网络、卷与临时秘密。
+控制台还提供真实浏览器与隔离六服务验收入口，具体命令和历史验证范围见 [测试与验证](docs/VALIDATION.md)。
 
-## 验证证据
+## 项目结构
 
-| 范围 | 已验证结果 | 证据 |
-| --- | --- | --- |
-| Java 回归 | 379/379，0 失败/错误/跳过 | [Week 6 最终复盘](docs/review/week6-review.md) |
-| 六服务运行 | 6 healthy，Flyway V11，OpenAPI 18，Prometheus UP | [Week 6 最终复盘](docs/review/week6-review.md) |
-| Linux 发布 | 完整 SHA GHCR 镜像、保留卷升级/回滚、ECS smoke | [Day 4 部署验收](docs/review/week6-day4-linux-deployment-acceptance.md) |
-| 性能 | V11 默认审计分页使用复合索引扫描 | [性能报告](docs/PERFORMANCE_REPORT.md) |
-| 安全 | 1 个 Low 修复；无已确认可复现 Critical/High 应用漏洞 | [安全摘要](docs/SECURITY_TEST_REPORT.md) |
-| 故障恢复 | Redis、RabbitMQ 重试/DLQ、错误 MySQL 配置闭环 | [故障演练](docs/review/week6-day6-fault-drills.md) |
-
-Day 5 优化后 ECS 外部 JMeter 复测全部返回 401，已判定为 Token 传递损坏，不能作为性能提升证据；本项目不声称生产吞吐、并发容量或 SLA。
-
-## 文档索引
-
-- [产品需求文档](docs/PRD.md)
-- [架构说明](docs/ARCHITECTURE.md)
-- [数据库与 ER](docs/DATABASE.md)
-- [API 与权限/错误](docs/API.md)
-- [交互式实时演示](http://127.0.0.1:8080/demo/index.html)（六服务栈全部 healthy 后可用）｜[演示手册：启动、账号与数据库写入说明](docs/DEMO.md)
-- [部署与回滚](docs/DEPLOYMENT.md)
-- [运维操作手册](docs/runbooks/README.md)
-- [故障演练记录](docs/incidents/README.md)
-- [架构决策记录](docs/adr/README.md)
-- [监控与排障](docs/MONITORING.md)
-- [性能报告](docs/PERFORMANCE_REPORT.md)
-- [安全测试摘要](docs/SECURITY_TEST_REPORT.md)
-- [面试笔记](docs/INTERVIEW_NOTES.md)
-- [Week 6 最终复盘](docs/review/week6-review.md)
-- [任务路线](TASKS.md) / [项目范围](PROJECT_BRIEF.md)
-
-## 已知限制
-
-- 单体、单机 Compose；没有 TLS 终止、水平扩容、多可用区或自动备份恢复演练。
-- JWT 没有刷新和主动撤销；角色变化后的旧 Token 最长可能继续有效两小时。
-- Redis 限流 fail-open 优先可用性，故障期间频控暂时失效。
-- Outbox、审计和业务表未实现长期归档/分区策略。
-- 安全验证不等于完整渗透或合规；供应链扫描数据需要每次发布刷新。
-- 性能证据只覆盖审计默认分页，不可外推到全部业务或真实生产规模。
-
-## 完整业务控制台
-
-打开同源 `/demo/index.html`，使用 ADMIN 与 REVIEWER 两个会话。控制台覆盖账户、人工交易、任意 CSV、导入/对账历史和逐笔结果、审核上下文与决定、完整审计、全库统计及工程入口；逐步演示提供 29 个真实 API 场景。当前接口为 20 个路径、27 个业务操作。
-
-先阅读 [覆盖清单](docs/DEMO_COVERAGE.md) 和 [本次验收](docs/review/2026-10-09-complete-demo-console-acceptance.md)。页面写入持久化数据库，刷新须重新登录。
-
-```powershell
-npm.cmd ci --prefix scripts/demo
-node scripts/demo/node_modules/playwright/cli.js install chromium
-powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -PreflightOnly
-powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1
-# 可选：本机已有 Chrome，且 JRE 已缓存时使用验收专用打包路径
-powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -UseCachedRuntime -BrowserChannel chrome
-# 另建独立 finguard-day6 栈，运行已有 Redis / MQ 演练；结束清理自有资源
-powershell -NoProfile -File scripts/demo/invoke-console-acceptance.ps1 -UseCachedRuntime -EngineeringOnly
+```text
+src/main/java/        业务模块与基础设施实现
+src/main/resources/  应用配置、数据库迁移与业务控制台
+src/test/            单元测试与集成测试
+docs/                产品、架构、接口与运行文档
+scripts/             演示、验收、部署与故障演练工具
+ops/                 Prometheus 与 Grafana 配置
+performance/         审计查询压测与 SQL 验证工具
+security/            安全扫描工具与策略
 ```
 
-默认业务验收只操作 `finguard-console`、临时随机凭据和独立端口，清理前核对 labels 与完整容器 ID。工程模式另外使用 `finguard-day6`；任何资源或端口冲突会停止。两个模式按顺序运行。缓存打包路径核对 Maven Java 17，记录本机 JRE digest，不代替生产 Dockerfile 的发布构建验证。
+## 文档
+
+- [产品需求](docs/PRD.md) · [架构说明](docs/ARCHITECTURE.md) · [数据库设计](docs/DATABASE.md)
+- [API 与权限](docs/API.md) · [演示操作指南](docs/DEMO_OPERATING_GUIDE.md) · [功能覆盖](docs/DEMO_COVERAGE.md)
+- [部署与回滚](docs/DEPLOYMENT.md) · [监控与排障](docs/MONITORING.md) · [运维手册](docs/runbooks/README.md)
+- [测试与验证](docs/VALIDATION.md) · [性能报告](docs/PERFORMANCE_REPORT.md) · [安全验证](docs/SECURITY_TEST_REPORT.md)
+
+## 项目边界
+
+本项目为个人开发的交易处理平台，使用演示数据。当前采用单机 Compose，未实现多可用区、TLS 终止或自动备份恢复；JWT 暂无刷新和主动撤销，Redis 故障期间限流暂时失效。性能验证限于审计日志默认分页，具体结果与适用范围见相应报告。

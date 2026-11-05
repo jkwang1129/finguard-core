@@ -33,6 +33,5 @@ MySQL 保存任务、业务结果、风险、审核和审计的权威状态。�
 ## 证据
 
 - [架构说明：一致性与可靠性](../ARCHITECTURE.md)
-- [异步消息契约](../design/week4-day1-async-messaging-contract.md)
-- [Outbox 设计](../design/week4-day3-outbox-publishing-design.md)
+- [数据库约束与任务状态](../DATABASE.md)
 - [RabbitMQ 重试/DLQ 演练](../incidents/rabbitmq-retry-dlq.md)

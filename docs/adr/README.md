@@ -1,6 +1,6 @@
 # FinGuard Core 架构决策记录
 
-Architecture Decision Record（ADR）记录已经影响代码、数据或运行方式的重要选择。它回答“为什么这样设计”，详细实现仍以 [架构说明](../ARCHITECTURE.md)、`docs/design/` 和源码为准。
+Architecture Decision Record（ADR）记录已经影响代码、数据或运行方式的重要选择。它回答“为什么这样设计”，详细实现以 [架构说明](../ARCHITECTURE.md) 和源码为准。
 
 ## 状态约定
 

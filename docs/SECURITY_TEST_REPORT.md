@@ -2,7 +2,7 @@
 
 ## 1. 最终判断
 
-Week 6 Day 6 覆盖认证、授权、输入/CSV、SQL/持久化、秘密、容器/部署、Actuator/Redis、RabbitMQ 八类边界。没有确认可复现的 Critical/High 应用漏洞；确认并修复 1 个 Low：开发 Compose 的 MySQL 端口从所有网卡收紧到 `127.0.0.1`。
+2026-08-12 至 2026-08-13 的验证覆盖认证、授权、输入/CSV、SQL/持久化、秘密、容器/部署、Actuator/Redis、RabbitMQ 八类边界。没有确认可复现的 Critical/High 应用漏洞；确认并修复 1 个 Low：开发 Compose 的 MySQL 端口从所有网卡收紧到 `127.0.0.1`。
 
 这不是渗透测试或合规认证。ZAP 只做本机、被动、未认证 Baseline；ECS/公网没有执行主动扫描。
 
@@ -21,7 +21,7 @@ Week 6 Day 6 覆盖认证、授权、输入/CSV、SQL/持久化、秘密、容�
 
 ## 3. 扫描结论
 
-Trivy 仓库扫描为 0 漏洞、0 配置错误、0 秘密。Day 6 镜像 OS 扫描报告 11 High、133 Medium、155 Low 供应链条目；对 6 个唯一 High CVE 做了应用路径和厂商状态复核，没有形成当前 HTTP 服务可利用的 High，但它们仍要求随基础镜像、数据库和厂商修复持续复扫。
+Trivy 仓库扫描为 0 漏洞、0 配置错误、0 秘密。同期镜像 OS 扫描报告 11 High、133 Medium、155 Low 供应链条目；对 6 个唯一 High CVE 做了应用路径和厂商状态复核，没有形成当前 HTTP 服务可利用的 High，但它们仍要求随基础镜像、数据库和厂商修复持续复扫。
 
 ZAP 根路径和 Swagger UI Baseline 均为 0 Fail。Swagger 警告主要是 CSP/跨源隔离等防御纵深建议与第三方前端依赖提示；公开文档没有用户可写规范入口。若未来公网提供 Swagger，必须重新设计 CSP、TLS 和认证后扫描。
 
@@ -40,4 +40,4 @@ ZAP 根路径和 Swagger UI Baseline 均为 0 Fail。Swagger 警告主要是 CSP
 - 未实现 TLS、WAF、集中秘密管理、SBOM 门禁、认证后 ZAP、SAST/DAST 全覆盖和告警通知。
 - 漏洞数据会漂移；每次发布应重建镜像、更新扫描数据库、核对厂商 VEX/errata。
 
-详细证据：[Day 6 安全报告](review/week6-day6-security-report.md)、[Day 6 故障演练](review/week6-day6-fault-drills.md)。
+复现工具见 [安全扫描说明](../security/README.md)，故障恢复见 [受控演练记录](incidents/README.md)。

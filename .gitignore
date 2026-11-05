@@ -18,22 +18,37 @@ target/
 .DS_Store
 Thumbs.db
 
-# Week 6 Day 5 local performance-test artifacts
+# Local performance-test artifacts
 performance/.tools/
 performance/results/
 performance/*.properties
 *.jtl
 
-# Week 6 Day 6 local security-scan artifacts
+# Local security-scan artifacts
 security/results/
 security/.cache/
 security/*.token
 security/*.env
 
-# Week 6 Day 7 local acceptance artifacts
+# Local acceptance artifacts
 scripts/acceptance/results/
 
 # Console-only acceptance dependencies and generated evidence
 scripts/demo/node_modules/
 scripts/demo/results/
 output/playwright/
+
+# Personal planning, study notes, development drafts, and raw evidence (local only)
+/.local-notes/
+/TASKS.md
+/PROJECT_BRIEF.md
+/docs/INTERVIEW_NOTES.md
+/docs/analysis/
+/docs/design/
+/docs/review/
+/docs/superpowers/
+
+# Legacy local acceptance entry points
+/scripts/acceptance/invoke-week6-day7-acceptance.ps1
+/scripts/acceptance/week6-day7-functions.ps1
+/scripts/acceptance/tests/test-week6-day7-acceptance.ps1

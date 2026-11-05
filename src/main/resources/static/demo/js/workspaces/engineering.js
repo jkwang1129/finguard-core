@@ -75,7 +75,7 @@ export const evidenceCards = [
       "powershell -NoProfile -File scripts/drills/invoke-messaging-retry-drill.ps1 -EnvironmentFile <独立临时.env> -ProjectName finguard-day6 -BaseUrl http://127.0.0.1:18080",
     signal:
       "Outbox SENT、消费去重记录、任务终态、retry/DLQ 队列及 finguard 指标",
-    doc: "docs/review/week6-day6-fault-drills.md",
+    doc: "docs/incidents/README.md",
     historicalDate: "2026-08-12 至 2026-08-13（原报告执行窗口）",
     verified: false,
   },
@@ -86,9 +86,9 @@ export const evidenceCards = [
     command:
       "powershell -NoProfile -File scripts/drills/invoke-redis-outage-drill.ps1 -EnvironmentFile <独立临时.env> -ProjectName finguard-day6 -BaseUrl http://127.0.0.1:18080",
     signal: "Redis 不可达时业务行为、缓存命中/TTL、恢复后的健康与统计",
-    doc: "docs/review/week6-day6-fault-drills.md",
+    doc: "docs/incidents/README.md",
     historicalDate:
-      "2026-08-12 至 2026-08-13（Day 6 原报告窗口；具体项目见正文）",
+      "2026-08-12 至 2026-08-13（历史验证窗口；具体项目见正文）",
     verified: false,
   },
   {
@@ -101,7 +101,7 @@ export const evidenceCards = [
       "实际 200/202、相同 ID、duplicate 标记、401/403/409/429 和 Retry-After",
     doc: "docs/SECURITY_TEST_REPORT.md",
     historicalDate:
-      "2026-08-12 至 2026-08-13（Day 6 原报告窗口；具体项目见正文）",
+      "2026-08-12 至 2026-08-13（历史验证窗口；具体项目见正文）",
     verified: false,
   },
   {
@@ -112,7 +112,7 @@ export const evidenceCards = [
       "按 docs/PERFORMANCE_REPORT.md 复现 JMeter 与 EXPLAIN ANALYZE；使用隔离数据库和有效的进程令牌。",
     signal: "请求成功率、执行计划与测试人口/环境/采集时间",
     doc: "docs/PERFORMANCE_REPORT.md",
-    historicalDate: "2026-08-12（Day 5 验收）",
+    historicalDate: "2026-08-12（性能验证）",
     verified: false,
   },
   {
@@ -124,7 +124,7 @@ export const evidenceCards = [
     signal: "测试/CI 运行 ID、镜像版本、health、备份与实际恢复记录",
     doc: "docs/DEPLOYMENT.md",
     historicalDate:
-      "2026-08-12 至 2026-08-13（Day 6 原报告窗口；具体项目见正文）",
+      "2026-08-12 至 2026-08-13（历史验证窗口；具体项目见正文）",
     verified: false,
   },
 ];

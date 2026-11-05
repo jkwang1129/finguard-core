@@ -24,7 +24,7 @@
 
 一次性容器收到无效数据库端口，数据源无法建立 MySQL 连接，Spring 上下文在启动阶段快速失败。由于使用了独立容器且 `--no-deps`，故障没有传播到健康 app 或依赖服务。
 
-首次演练还发现清理逻辑会把“不存在旧容器”的 Docker 错误当成致命异常。修正后先检查容器存在性，仅删除明确命中的 Day 6 容器，使重复清理安全。
+清理逻辑先检查容器存在性，仅删除明确命中的隔离演练容器，使重复清理安全。
 
 ## 恢复与验证
 
@@ -41,7 +41,7 @@
 
 ## 证据
 
-- [Day 6 故障演练总复盘](../review/week6-day6-fault-drills.md)
+- [故障演练记录](README.md)
 - [MySQL 错误配置演练脚本](../../scripts/drills/invoke-misconfiguration-drill.ps1)
 - [Linux 部署与回滚 Runbook](../runbooks/linux-deployment-and-rollback.md)
 - [依赖故障响应 Runbook](../runbooks/dependency-incident-response.md)

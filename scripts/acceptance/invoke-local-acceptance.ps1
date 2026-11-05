@@ -30,9 +30,9 @@ $repositoryRoot = [System.IO.Path]::GetFullPath(
 )
 $composeFile = Join-Path $repositoryRoot 'docker-compose.yml'
 $linuxComposeFile = Join-Path $repositoryRoot 'compose.linux.yml'
-$functionsFile = Join-Path $PSScriptRoot 'week6-day7-functions.ps1'
+$functionsFile = Join-Path $PSScriptRoot 'local-acceptance-functions.ps1'
 if (-not (Test-Path -LiteralPath $functionsFile -PathType Leaf)) {
-    throw "Day 7 acceptance functions are missing: $functionsFile"
+    throw "Local acceptance functions are missing: $functionsFile"
 }
 . $functionsFile
 
@@ -91,7 +91,7 @@ if ($PreflightOnly) {
     }
     $mavenJavaVersion = Get-MavenJavaVersion
     if ($mavenJavaVersion -notmatch '^17\.') {
-        throw "Day 7 requires Maven Java 17: $mavenJavaVersion"
+        throw "Local requires Maven Java 17: $mavenJavaVersion"
     }
     & docker version *> $null
     if ($LASTEXITCODE -ne 0) {
@@ -341,7 +341,7 @@ try {
             (Join-Path $repositoryRoot 'Dockerfile'),
             (Join-Path $repositoryRoot 'sample-data\demo-import.csv'))) {
         if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
-            throw "Required Day 7 file is missing: $requiredFile"
+            throw "Required Local file is missing: $requiredFile"
         }
     }
     foreach ($commandName in @('mvn', 'docker', 'curl.exe')) {
@@ -351,7 +351,7 @@ try {
     }
     $mavenJavaVersion = Get-MavenJavaVersion
     if ($mavenJavaVersion -notmatch '^17\.') {
-        throw "Day 7 requires Maven Java 17: $mavenJavaVersion"
+        throw "Local requires Maven Java 17: $mavenJavaVersion"
     }
     & docker version *> $null
     if ($LASTEXITCODE -ne 0) {
@@ -381,7 +381,7 @@ try {
                 -LocalPort $port `
                 -State Listen `
                 -ErrorAction SilentlyContinue) {
-            throw "Isolated Day 7 port is already in use: $port"
+            throw "Isolated Local port is already in use: $port"
         }
     }
 
@@ -461,7 +461,7 @@ try {
     }
     $openApi = Invoke-JsonRequest 'GET' "$baseUri/v3/api-docs" $null ''
     $openApiPathCount = @($openApi.Body.paths.PSObject.Properties).Count
-    Assert-Equal $openApiPathCount 18 'OpenAPI path count'
+    Assert-Equal $openApiPathCount 20 'OpenAPI path count'
 
     Wait-Until {
         $targets = Invoke-JsonRequest `
@@ -499,7 +499,7 @@ try {
         'Anonymous account query'
     $accountBody = @{
         accountNo = 'DAY7-DEMO'
-        accountName = 'Day 7 Demo'
+        accountName = 'Local Demo'
         accountType = 'BANK'
     }
     $accountsBefore = Get-MySqlScalar (
@@ -628,7 +628,7 @@ try {
         'PATCH' "$baseUri/api/review-tasks/$reviewTaskId/decision" @{
             decision = 'CONFIRMED'
             version = $reviewVersion
-            note = 'week6 day7 verified'
+            note = 'local acceptance verified'
         } $reviewerToken
     Assert-Equal $reviewDecision.Body.status 'CONFIRMED' 'Review terminal state'
 
@@ -719,7 +719,7 @@ try {
         try {
             Invoke-Compose @('down', '--volumes', '--remove-orphans')
         } catch {
-            Write-Warning 'Day 7 Compose cleanup returned an error'
+            Write-Warning 'Local Compose cleanup returned an error'
         }
     }
     $day7ImageIds = @(
@@ -730,7 +730,7 @@ try {
     if ($day7ImageIds.Count -gt 0) {
         & docker image rm 'finguard-core:day7' | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning 'Day 7 image cleanup returned an error'
+            Write-Warning 'Local image cleanup returned an error'
         }
     }
     if (Test-Path -LiteralPath $temporaryRoot) {
@@ -770,7 +770,7 @@ try {
         -not (Test-Path -LiteralPath $temporaryRoot)
     )
     if ($cleanupAttempted -and -not $cleanupPassed) {
-        Write-Warning 'Independent Day 7 cleanup verification failed'
+        Write-Warning 'Independent Local cleanup verification failed'
     }
     if ($null -ne $result) {
         $result.CleanupPassed = $cleanupPassed

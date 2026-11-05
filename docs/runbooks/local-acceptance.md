@@ -10,13 +10,13 @@
 
 1. `mvn -version` 显示 Maven 使用 Java 17。
 2. Docker Engine 和 Compose Plugin 可访问。
-3. 开发 MySQL、RabbitMQ、Redis 可以为 Maven 集成测试提供依赖；正式六服务验收另用独立端口和空卷。
+3. Maven 集成测试自动创建 Testcontainers 依赖；正式六服务验收另用独立端口和空卷。
 4. 工作树范围明确，仓库中没有要保留的临时秘密或结果文件。
 
 ## 1. 查看无副作用执行计划
 
 ```powershell
-& scripts/acceptance/invoke-week6-day7-acceptance.ps1 -DryRun | Format-List
+& scripts/acceptance/invoke-local-acceptance.ps1 -DryRun | Format-List
 ```
 
 确认 `ProjectName` 为 `finguard-day7`，服务集合为 app、MySQL、RabbitMQ、Redis、Prometheus、Grafana，并核对脚本声明的临时资源和清理动作。
@@ -24,15 +24,15 @@
 ## 2. 执行预检
 
 ```powershell
-& scripts/acceptance/invoke-week6-day7-acceptance.ps1 -PreflightOnly | Format-List
+& scripts/acceptance/invoke-local-acceptance.ps1 -PreflightOnly | Format-List
 ```
 
-预检必须确认 Maven JVM 为 Java 17、Docker/Compose 可用、开发与 Linux Compose 均能解析；它不会启动 Day 7 服务。
+预检必须确认 Maven JVM 为 Java 17、Docker/Compose 可用、开发与 Linux Compose 均能解析；它不会启动隔离验收服务。
 
 ## 3. 运行完整验收
 
 ```powershell
-$result = & scripts/acceptance/invoke-week6-day7-acceptance.ps1
+$result = & scripts/acceptance/invoke-local-acceptance.ps1
 $result | Format-List
 ```
 
@@ -43,7 +43,7 @@ $result | Format-List
 | `ProjectName` | `finguard-day7` |
 | `ServicesHealthy` | `True` |
 | `FlywayVersion` | `11` |
-| `OpenApiPathCount` | `18` |
+| `OpenApiPathCount` | `20` |
 | `PrometheusTargetUp` | `True` |
 | `BusinessFlowPassed` | `True` |
 | `RestartPassed` | `True` |
@@ -58,20 +58,20 @@ $project = 'finguard-day7'
 docker ps -aq --filter "label=com.docker.compose.project=$project"
 docker volume ls -q --filter "label=com.docker.compose.project=$project"
 docker network ls -q --filter "label=com.docker.compose.project=$project"
-docker image ls -q --filter "reference=finguard-day7*"
+docker image ls -q --filter "reference=finguard-core:day7"
 Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
   Where-Object LocalPort -in @(18080,13306,15674,15673,16379,19090,13000)
 ```
 
-五条检查都应无输出。随后确认普通开发 MySQL、RabbitMQ、Redis 容器仍然存在；不要为了得到“零资源”而删除非 Day 7 容器。
+五条检查都应无输出。随后确认普通开发 MySQL、RabbitMQ、Redis 容器仍然存在；不要为了得到“零资源”而删除非隔离验收容器。
 
 ## 5. 补充门禁
 
 ```powershell
-& scripts/acceptance/tests/test-week6-day7-acceptance.ps1
+& scripts/acceptance/tests/test-local-acceptance.ps1
 & security/tests/test-security-tools.ps1
 git diff --check
 git status --short
 ```
 
-详细的新鲜验收结果见 [Week 6 最终复盘](../review/week6-review.md)。
+历史验证范围与复现入口见 [测试与验证](../VALIDATION.md)。
