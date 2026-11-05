@@ -75,4 +75,4 @@ sh scripts/linux/status.sh
 6. current/previous image 可追溯；没有删除数据卷。
 7. 临时 GHCR 登录配置和本地 Token 已清理。
 
-详细拓扑和已验证生命周期见 [部署文档](../DEPLOYMENT.md) 与 [Day 4 Linux 验收](../review/week6-day4-linux-deployment-acceptance.md)。
+详细拓扑和已验证生命周期见 [部署文档](../DEPLOYMENT.md) 与 [测试与验证](../VALIDATION.md)。

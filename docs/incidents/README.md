@@ -12,7 +12,7 @@
 
 ## 阅读方式
 
-每份记录都包含性质与边界、影响与现象、时间线、根因、恢复与验证、预防和证据。需要执行响应时先阅读 [依赖故障响应 Runbook](../runbooks/dependency-incident-response.md)；完整原始结果和清理边界见 [Week 6 Day 6 故障复盘](../review/week6-day6-fault-drills.md)。
+每份记录都包含性质与边界、影响与现象、时间线、根因、恢复与验证、预防和证据。执行前先阅读 [依赖故障响应 Runbook](../runbooks/dependency-incident-response.md)，并确认下述隔离与清理边界。
 
 ## 共同边界
 

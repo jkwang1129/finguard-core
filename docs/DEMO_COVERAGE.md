@@ -1,6 +1,6 @@
 # 完整控制台覆盖清单
 
-入口：同源 `/demo/index.html`。下面区分业务 API、场景和工程证据；当次运行结果见 [验收报告](review/2026-10-09-complete-demo-console-acceptance.md)。页面入口与运行证据分别核对。
+入口：同源 `/demo/index.html`。下面区分业务 API、场景和工程证据；复现入口与历史结果见 [测试与验证](VALIDATION.md)。页面入口与运行证据分别核对。
 
 ## 27 个业务操作 / 20 个路径对象
 

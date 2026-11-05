@@ -32,7 +32,7 @@ Redis 故障期间数据库读取压力增加，登录/上传频控暂时削弱�
 
 ## 证据
 
-- [Redis 缓存与限流设计](../design/week5-day6-redis-cache-and-rate-limit-design.md)
+- [架构说明](../ARCHITECTURE.md)
 - [Redis 中断故障演练](../incidents/redis-outage.md)
 - [监控与排障](../MONITORING.md)
 - [安全测试报告](../SECURITY_TEST_REPORT.md)

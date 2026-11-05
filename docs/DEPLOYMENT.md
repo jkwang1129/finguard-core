@@ -28,7 +28,7 @@ docker compose down
 Remove-Item Env:JWT_SECRET_BASE64
 ```
 
-日常停止禁止加 `-v`。如需一次性全链路验收，优先使用固定隔离项目的 `scripts/acceptance/invoke-week6-day7-acceptance.ps1`，它会生成临时秘密并在 `finally` 清理自己的资源。
+日常停止禁止加 `-v`。如需一次性全链路验收，优先使用固定隔离项目的 `scripts/acceptance/invoke-local-acceptance.ps1`，它会生成临时秘密并在 `finally` 清理自己的资源。
 
 ## 3. Linux 首次部署
 
@@ -92,4 +92,4 @@ sh scripts/linux/status.sh
 5. health、OpenAPI、JWT 401/403、业务 smoke、Prometheus target、Grafana 健康通过。
 6. 记录当前/上一镜像 SHA；回滚不删除卷。
 
-Day 4 的真实 Linux 验收见[部署验收记录](review/week6-day4-linux-deployment-acceptance.md)。
+Linux 验证的历史范围见[测试与验证](VALIDATION.md)。

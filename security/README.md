@@ -1,6 +1,6 @@
-# Day 6 security verification
+# Security verification
 
-This directory contains reproducible wrappers and policy files for Week 6 Day 6. Raw reports, vulnerability databases, image archives and temporary credentials stay under ignored `security/results/` or `security/.cache/`.
+This directory contains reproducible wrappers and policy files for repository, image, and passive web verification. Raw reports, vulnerability databases, image archives and temporary credentials stay under ignored `security/results/` or `security/.cache/`.
 
 ## Static repository and image scan
 
@@ -12,7 +12,7 @@ Build the current application image first, then run:
   -ImageReference 'finguard-core:day6'
 ```
 
-The wrapper uses `aquasec/trivy:0.72.0` and writes JSON only to the ignored results directory. It scans the repository for vulnerabilities, misconfiguration and secrets, then scans the exported image for OS-package vulnerabilities plus configuration and secret findings. The image scan skips embedded JAR dependency analysis because the Day 6 offline run does not retain Trivy's separate Java database; the repository/POM scan, Maven dependency resolution and full regression provide complementary evidence, but do not replace a future SBOM-aware SCA run. Scanner results require source-backed triage before they are treated as findings.
+The wrapper uses `aquasec/trivy:0.72.0` and writes JSON only to the ignored results directory. It scans the repository for vulnerabilities, misconfiguration and secrets, then scans the exported image for OS-package vulnerabilities plus configuration and secret findings. The image scan skips embedded JAR dependency analysis because the offline scanning workflow does not retain Trivy's separate Java database; the repository/POM scan, Maven dependency resolution and full regression provide complementary evidence, but do not replace a future SBOM-aware SCA run. Scanner results require source-backed triage before they are treated as findings.
 
 ## Passive web baseline
 

@@ -61,4 +61,4 @@ sum by (flow, reason) (finguard_messaging_consumer_failures_total)
 
 Redis 故障时 health 为 503 但登录/统计可能因 fail-open/回源仍为 200；这两组信号必须同时解释。RabbitMQ 演练必须排除竞争消费者，否则受控消息可能被常驻实例抢走。
 
-相关证据：[Day 3 监控验收](review/week6-day3-acceptance.md)、[Day 6 故障复盘](review/week6-day6-fault-drills.md)。
+相关验证范围：[测试与验证](VALIDATION.md)、[故障演练记录](incidents/README.md)。

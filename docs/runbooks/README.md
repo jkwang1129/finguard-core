@@ -18,7 +18,7 @@
 | 首次部署、升级、停止或回滚 Linux 环境 | [Linux 部署与回滚](linux-deployment-and-rollback.md) |
 | Redis、RabbitMQ 或 MySQL 异常 | [依赖故障响应](dependency-incident-response.md) |
 
-配套参考：[监控与排障](../MONITORING.md)、[故障演练记录](../incidents/README.md)、[Week 6 最终复盘](../review/week6-review.md)。
+配套参考：[监控与排障](../MONITORING.md)、[故障演练记录](../incidents/README.md)、[测试与验证](../VALIDATION.md)。
 
 ## 安全边界
 

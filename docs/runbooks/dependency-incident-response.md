@@ -50,4 +50,4 @@ sh scripts/linux/logs.sh mysql 100
 - 一次性容器、消息、key、数据和临时秘密已按隔离边界清理；
 - 形成“现象 → 假设 → 证据 → 根因 → 恢复 → 预防”记录。
 
-监控查询入口见 [监控与排障](../MONITORING.md)，三次源演练见 [Day 6 故障复盘](../review/week6-day6-fault-drills.md)。
+监控查询入口见 [监控与排障](../MONITORING.md)，受控演练见 [故障演练记录](../incidents/README.md)。

@@ -4,14 +4,14 @@ $repositoryRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot '..\..\..')
 )
 $runner = Join-Path $repositoryRoot (
-    'scripts\acceptance\invoke-week6-day7-acceptance.ps1'
+    'scripts\acceptance\invoke-local-acceptance.ps1'
 )
 $functions = Join-Path $repositoryRoot (
-    'scripts\acceptance\week6-day7-functions.ps1'
+    'scripts\acceptance\local-acceptance-functions.ps1'
 )
 
 if (-not (Test-Path -LiteralPath $functions -PathType Leaf)) {
-    throw 'Day 7 acceptance functions are missing'
+    throw 'Local acceptance functions are missing'
 }
 . $functions
 $healthBytes = [byte[]](123, 34, 115, 116, 97, 116, 117, 115, 34, 58, 34, 85, 80, 34, 125)
@@ -43,7 +43,7 @@ try {
 }
 
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
-    throw 'Day 7 acceptance runner is missing'
+    throw 'Local acceptance runner is missing'
 }
 $runnerText = Get-Content -LiteralPath $runner -Raw
 if ($runnerText -match "docker image inspect 'finguard-core:day7'") {
@@ -52,10 +52,10 @@ if ($runnerText -match "docker image inspect 'finguard-core:day7'") {
 
 $plan = & $runner -DryRun
 if ($plan.ProjectName -ne 'finguard-day7') {
-    throw 'Day 7 acceptance must use the fixed isolated project name'
+    throw 'Local acceptance must use the fixed isolated project name'
 }
 if ($plan.ContainerPrefix -ne 'finguard-day7') {
-    throw 'Day 7 containers must use the isolated prefix'
+    throw 'Local containers must use the isolated prefix'
 }
 
 $expectedServices = @(
@@ -105,7 +105,7 @@ if ($cleanupCommands -notmatch 'down --volumes --remove-orphans') {
     throw 'The isolated acceptance project must define complete cleanup'
 }
 if ($cleanupCommands -notmatch 'docker image rm finguard-core:day7') {
-    throw 'Cleanup must remove the Day 7 application image'
+    throw 'Cleanup must remove the Local application image'
 }
 if ($cleanupCommands -match 'compose\.linux\.yml') {
     throw 'Cleanup must never target the retained Linux deployment'
@@ -113,10 +113,10 @@ if ($cleanupCommands -match 'compose\.linux\.yml') {
 
 $preflight = & $runner -PreflightOnly
 if ($preflight.MavenJavaVersion -notmatch '^17\.') {
-    throw 'Day 7 must run Maven with Java 17'
+    throw 'Local must run Maven with Java 17'
 }
 if ($preflight.MutatedDockerState) {
     throw 'Preflight-only mode must not mutate Docker state'
 }
 
-Write-Output 'WEEK6_DAY7_ACCEPTANCE_TOOL_TESTS=PASS'
+Write-Output 'LOCAL_ACCEPTANCE_TOOL_TESTS=PASS'

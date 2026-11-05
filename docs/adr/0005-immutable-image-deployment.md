@@ -32,7 +32,7 @@ GitHub Actions 仅在 Java 测试、打包和镜像检查通过后，将应用�
 
 ## 证据
 
-- [Linux 部署设计](../design/week6-day4-linux-deployment-design.md)
-- [Linux 部署验收](../review/week6-day4-linux-deployment-acceptance.md)
+- [架构说明](../ARCHITECTURE.md)
+- [测试与验证](../VALIDATION.md)
 - [部署与回滚文档](../DEPLOYMENT.md)
 - [Linux 部署与回滚 Runbook](../runbooks/linux-deployment-and-rollback.md)

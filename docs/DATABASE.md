@@ -65,7 +65,7 @@ erDiagram
 - 审核状态与来源分页索引；
 - V11 `idx_audit_logs_created_id(created_at DESC, id DESC)`。
 
-Day 5 在 50,002 条审计数据上用真实 `EXPLAIN ANALYZE` 证明默认查询由全表扫描/排序变为按 V11 索引取 20 行；详细限制见[性能报告](PERFORMANCE_REPORT.md)。
+2026-08-12 的 SQL 验证在 50,002 条审计数据上用真实 `EXPLAIN ANALYZE` 证明默认查询由全表扫描/排序变为按 V11 索引取 20 行；详细限制见[性能报告](PERFORMANCE_REPORT.md)。
 
 ## 5. 数据生命周期与恢复边界
 

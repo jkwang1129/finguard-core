@@ -41,7 +41,7 @@
 
 ## 证据
 
-- [Day 6 故障演练总复盘](../review/week6-day6-fault-drills.md)
+- [故障演练记录](README.md)
 - [RabbitMQ 重试/DLQ 演练脚本](../../scripts/drills/invoke-messaging-retry-drill.ps1)
 - [MySQL 事实源与 Outbox ADR](../adr/0002-mysql-truth-and-outbox.md)
 - [依赖故障响应 Runbook](../runbooks/dependency-incident-response.md)

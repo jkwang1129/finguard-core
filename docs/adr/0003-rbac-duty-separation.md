@@ -33,6 +33,6 @@ Accepted
 ## 证据
 
 - [API 权限矩阵](../API.md)
-- [认证设计](../design/week2-day1-authentication-design.md)
-- [审核工作流与乐观锁](../design/week5-day4-review-workflow-and-optimistic-lock-design.md)
-- [Week 6 最终复盘：JWT/RBAC](../review/week6-review.md)
+- [架构说明](../ARCHITECTURE.md)
+- [安全验证摘要](../SECURITY_TEST_REPORT.md)
+- [测试与验证](../VALIDATION.md)

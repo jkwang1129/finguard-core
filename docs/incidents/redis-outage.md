@@ -41,7 +41,7 @@
 
 ## 证据
 
-- [Day 6 故障演练总复盘](../review/week6-day6-fault-drills.md)
+- [故障演练记录](README.md)
 - [Redis 故障演练脚本](../../scripts/drills/invoke-redis-outage-drill.ps1)
 - [Redis fail-open ADR](../adr/0004-redis-fail-open.md)
 - [依赖故障响应 Runbook](../runbooks/dependency-incident-response.md)
