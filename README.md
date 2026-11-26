@@ -1,5 +1,7 @@
 # FinGuard Core
 
+[![CI](https://github.com/jkwang1129/finguard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/jkwang1129/finguard-core/actions/workflows/ci.yml)
+
 **交易对账与风险审核平台** · Java 17 · Spring Boot · MySQL · RabbitMQ · Redis
 
 [项目介绍](#项目介绍) · [系统架构](#系统架构) · [技术栈](#技术栈) · [功能特性](#功能特性) · [TODO](#todo) · [效果展示](#效果展示)
@@ -127,7 +129,7 @@ sequenceDiagram
 
 - [ ] 为失败任务积压和死信队列增加可配置告警。
 - [ ] 补充 MySQL 数据备份与恢复演练。
-- [ ] 在可复现环境中补充导入、对账和审计查询的性能基准。
+- [x] 在可复现环境中补充导入、对账和审计查询的性能基准（见 [量化实测](docs/RESUME_BENCHMARK.md)）。
 
 ## 效果展示
 
@@ -236,4 +238,4 @@ docker compose ps
 - [产品需求](docs/PRD.md) · [架构说明](docs/ARCHITECTURE.md) · [数据库设计](docs/DATABASE.md)
 - [接口与权限](docs/API.md) · [演示操作指南](docs/DEMO_OPERATING_GUIDE.md) · [功能覆盖](docs/DEMO_COVERAGE.md)
 - [部署与回滚](docs/DEPLOYMENT.md) · [监控与排障](docs/MONITORING.md) · [运维手册](docs/runbooks/README.md)
-- [测试与验证](docs/VALIDATION.md) · [性能报告](docs/PERFORMANCE_REPORT.md) · [安全验证](docs/SECURITY_TEST_REPORT.md)
+- [测试与验证](docs/VALIDATION.md) · [性能报告](docs/PERFORMANCE_REPORT.md) · [量化实测](docs/RESUME_BENCHMARK.md) · [安全验证](docs/SECURITY_TEST_REPORT.md)
